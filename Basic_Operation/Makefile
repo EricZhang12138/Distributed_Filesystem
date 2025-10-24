@@ -3,9 +3,15 @@ CXX := g++
 CXXFLAGS := -std=c++17 -Wall
 
 # Directories
+<<<<<<< HEAD
 SERVER_DIR := server_code
 CLIENT_DIR := client_code
 PROTO_DIR := proto_files
+=======
+SERVER_DIR := server
+CLIENT_DIR := client
+PROTO_DIR := protos
+>>>>>>> origin/basic_operations
 # All generated files will go into the build directory
 BUILD_DIR := build
 
