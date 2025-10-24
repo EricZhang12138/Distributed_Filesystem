@@ -19,7 +19,8 @@ private:
         int64_t timestamp;
         std::string filename;
 
-    };    
+    };
+
 
     std::unique_ptr<afs_operation::operators::Stub> stub_;
     std::map<std::string,FileInfo> cache;
