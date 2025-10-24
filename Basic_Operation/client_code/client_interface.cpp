@@ -18,13 +18,17 @@ private:
         bool is_changed;
         int64_t timestamp;
         std::string filename;
+    };
 
+    struct FileStreams {
+        std::unique_ptr<std::ifstream> read_stream;
+        std::unique_ptr<std::ofstream> write_stream;
     };
 
 
     std::unique_ptr<afs_operation::operators::Stub> stub_;
     std::map<std::string,FileInfo> cache;
-    std::map<std::string,std::unique_ptr<std::fstream>> opened_files;
+    std::map<std::string,FileStreams> opened_files;
     std::string output_file_path;
     std::string input_file_path;
 
@@ -85,8 +89,16 @@ public:
             }
             outfile.close();
 
-            auto file_descriptor_ptr = std::make_unique<std::fstream>(file_path);
-            opened_files[filename] = std::move(file_descriptor_ptr);
+
+            auto read_stream = std::make_unique<std::ifstream>(file_path);
+            auto write_stream = std::make_unique<std::ofstream>(file_path, std::ios::app);
+
+            if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
+                std::cerr << "Failed to open local file streams after download." << std::endl;
+                cache.erase(filename);
+                return false;
+            }
+            opened_files[filename] = FileStreams{std::move(read_stream), std::move(write_stream)};
             
             grpc::Status status = reader->Finish();
         
@@ -192,12 +204,14 @@ public:
             //     std::cout << "File: "<< file_path << " is valid and is now opened." << std::endl;
             // }
             // open the local file which is guaranteed to be up-to-date
-            auto file_descriptor_ptr = std::make_unique<std::fstream>(file_path);
-            if (!file_descriptor_ptr || !file_descriptor_ptr->is_open()) {
+            auto read_stream = std::make_unique<std::ifstream>(file_path);
+            auto write_stream = std::make_unique<std::ofstream>(file_path, std::ios::app);
+
+            if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
                 std::cerr << "Failed to open the local file stream." << std::endl;
                 return false;
             }
-            opened_files[filename] = std::move(file_descriptor_ptr);
+            opened_files[filename] = FileStreams{std::move(read_stream), std::move(write_stream)};
             std::cout << "File '" << filename << "' is now open for use." << std::endl;
              return true;
             }
@@ -215,7 +229,7 @@ public:
             }else{
                 // now we can read the file
                 auto it = opened_files.find(filename);
-                std::fstream& file_stream = *(it->second);
+                std::ifstream& file_stream = *(it->second.read_stream);
                 std::string line;
 
                 if (std::getline(file_stream, line)){
@@ -241,17 +255,9 @@ public:
             }else{
                 // now we write to the file
                 auto it = opened_files.find(filename);
-                std::fstream& file_stream = *(it->second);
+                std::ofstream& file_stream = *(it->second.write_stream);
 
-                // Save the current position of the READ cursor.
-                std::streampos original_read_pos = file_stream.tellg();
-
-                // Position the cursor at the end of the file to append data
-                file_stream.seekp(0, std::ios::end);
                 file_stream << data;
-
-                // Restore the READ cursor to its original position.
-                file_stream.seekg(original_read_pos);
 
                 if (file_stream.fail()) {
                     std::cerr << "Error: Failed to write data to " << filename << std::endl;
@@ -290,17 +296,16 @@ public:
         struct FileInfo file_info{true, 0, filename};
         cache[filename] = file_info;
 
-        // Open the newly created local file with fstream for reading/writing
-        // and add its stream pointer to the map of opened files.
-        auto file_stream_ptr = std::make_unique<std::fstream>(file_path, std::ios::in | std::ios::out);
-        if (!file_stream_ptr || !file_stream_ptr->is_open()) {
+        auto read_stream = std::make_unique<std::ifstream>(file_path);
+        auto write_stream = std::make_unique<std::ofstream>(file_path, std::ios::app);
+        
+        if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
             std::cerr << "Failed to open newly created file stream for: " << file_path << std::endl;
             cache.erase(filename); // Clean up metadata on failure.
             return false;
         }
 
-        opened_files[filename] = std::move(file_stream_ptr);
-
+        opened_files[filename] = FileStreams{std::move(read_stream), std::move(write_stream)};
         std::cout << "Successfully created and opened '" << filename << "' for writing." << std::endl;
         return true;
     }
@@ -327,8 +332,18 @@ public:
         if (cache_it->second.is_changed) {
             std::cout << "File '" << filename << "' was modified. Flushing to server..." << std::endl;
 
+            // Flush the write stream to ensure all data is on disk
+            std::ofstream& write_stream = *(opened_file_it->second.write_stream);
+            write_stream.flush();
+            if(write_stream.fail()) {
+                std::cerr << "Error: Failed to flush write stream before closing." << std::endl;
+                return false;
+            }
+
             // Read the entire content of the local cached file.
-            std::fstream& file_stream = *(opened_file_it->second);
+            // std::fstream& file_stream = *(opened_file_it->second);
+            std::ifstream& file_stream = *(opened_file_it->second.read_stream);
+            file_stream.clear(); // Clear any error flags (like EOF)
             file_stream.seekg(0, std::ios::beg); // Rewind to the start before reading
             
             // sstream can help reading the entire contents of the file
@@ -351,6 +366,7 @@ public:
 
                 if(len<=0)break;
                 afs_operation::FileRequest request;
+                request.set_path_select(1);
                 request.set_filename(filename);
                 request.set_content(buffer, len);
                 writer->Write(request);

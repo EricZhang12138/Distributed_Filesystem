@@ -27,9 +27,6 @@ message FileResponse {
 service operators{
     rpc request_dir (InitialiseRequest) returns (InitialiseResponse);
     rpc open (FileRequest) returns (stream FileResponse);
-    rpc create (FileRequest) returns (FileResponse);
-    rpc read (FileRequest) returns (stream FileResponse);
-    rpc write (FileRequest) returns (FileResponse);
     rpc close (stream FileRequest) returns (FileResponse);
     rpc compare (FileRequest) returns (stream FileResponse);
 }

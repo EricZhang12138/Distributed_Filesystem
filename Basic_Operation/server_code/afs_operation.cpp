@@ -18,6 +18,7 @@ struct FileInfo{
     int64_t timestamp;
 };
 
+
 class FileSystem final : public afs_operation::operators::Service{
 
     // a constant for the directory where the files are stored on the server
@@ -67,6 +68,10 @@ class FileSystem final : public afs_operation::operators::Service{
         const std::size_t chunk_size = 4096;
         char buffer[chunk_size];
         afs_operation::FileResponse fr;
+        auto file_time = std::filesystem::last_write_time(path);
+        auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        file_time - std::filesystem::file_time_type::clock::now() + 
+        std::chrono::system_clock::now());
         while(true){
             file.read(buffer, chunk_size);
             std::streamsize len = file.gcount();
@@ -75,8 +80,8 @@ class FileSystem final : public afs_operation::operators::Service{
             fr.clear_content();
             fr.set_content(buffer, len);
             fr.set_length(static_cast<int32_t>(len));
-            // fr.set_timestamp(sctp.time_since_epoch().count()); 
-            // std::cout<<fr.content()<<std::endl;
+            fr.set_timestamp(sctp.time_since_epoch().count());
+
             if(!writer->Write(fr)){
                 std::cerr << "Error: Failed write " << std::endl;
                 return grpc::Status(grpc::StatusCode::INTERNAL, "Server failed to create the file.");
@@ -88,147 +93,6 @@ class FileSystem final : public afs_operation::operators::Service{
     }
 
 
-
-    grpc::Status create(grpc::ServerContext* context, const afs_operation::FileRequest* request, afs_operation::FileResponse* response) override {
-        const std::string& filename = request->filename();
-        const std::string& content = request->content();
-
-        // only output files are created
-        std::string path = SERVER_OUTPUT_FILES_ROOT + filename;
-
-        std::cout << "Client requested to create file: " << path << std::endl;
-
-        // Open the file for writing. Will create the file if its not there
-        std::ofstream outfile(path, std::ios::binary);
-        if (!outfile.is_open()) {
-            std::cerr << "Error: Failed to create or open file at " << path << std::endl;
-            return grpc::Status(grpc::StatusCode::INTERNAL, "Server failed to create the file.");
-        }
-
-        // Write the content received from the client into the file.
-        outfile << content;
-        if (outfile.fail()) {
-            std::cerr << "Error: Failed to write content to " << path << std::endl;
-            outfile.close();
-            return grpc::Status(grpc::StatusCode::INTERNAL, "Server failed to write content to the file.");
-        }
-
-        outfile.close();
-
-        // Get the timestamp of the new file.
-        try {
-            auto file_time = std::filesystem::last_write_time(path); // gets the file's modification time
-            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(file_time - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-            response->set_timestamp(sctp.time_since_epoch().count()); //Unix timestamp
-        } catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "Warning: Could not get timestamp for new file: " << e.what() << std::endl;
-            response->set_timestamp(0);
-        }
-        
-        // Set the response and return success.
-        response->set_length(content.length());
-        std::cout << "Successfully created file '" << filename << "' with size " << content.length() << std::endl;
-        
-        return grpc::Status::OK;
-    }
-
-    grpc::Status read(grpc::ServerContext* context, const afs_operation::FileRequest* request, grpc::ServerWriter<afs_operation::FileResponse>* writer)override{
-        std::string filename = request->filename();
-        std::cout << "Client requested to read file: " << filename << std::endl;
-    
-        // Determine path based on path_select
-        std::string path;
-        if (request->path_select() == 0) {
-            path = SERVER_INPUT_FILES_ROOT + filename;
-        } else {
-            path = SERVER_OUTPUT_FILES_ROOT + filename;
-        }
-    
-        // Read file in binary mode
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open()) {
-            std::cerr << "File: " << path << " not found" << std::endl;
-            return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found on the server.");
-        }
-    
-        // Read entire file content
-        // std::string content_of_file((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        // int size_of_file = content_of_file.size();
-
-        const std::size_t chunk_size = 4096;
-        char buffer[chunk_size];
-        afs_operation::FileResponse fr;
-        
-        while(true){
-            file.read(buffer, chunk_size);
-            std::streamsize len = file.gcount();
-            
-            if(len <= 0)break;
-            fr.clear_content();
-            fr.set_content(buffer, len);
-            fr.set_length(static_cast<int32_t>(len));
-            // fr.set_timestamp(sctp.time_since_epoch().count()); 
-            if (!writer->Write(fr)) {
-                std::cerr << "Failed to write chunk " << " to server" << std::endl;
-                return grpc::Status(grpc::StatusCode::INTERNAL, "Failed to write chunk");
-            }
-        }
-        // writer->WritesDone();
-        // response->set_content(content_of_file);
-        // response->set_length(size_of_file);
-        std::cout << "File: " << filename << " successfully read with size: " << std::endl;
-        return grpc::Status::OK;
-    }
-    
-    grpc::Status write(grpc::ServerContext* context, const afs_operation::FileRequest* request, afs_operation::FileResponse* response) override {
-        const std::string& filename = request->filename();
-        const std::string& content = request->content();
-    
-        std::cout << "Client requested to write to file: " << filename << std::endl;
-    
-        // Determine the path - usually output files
-        std::string path;
-        if (request->path_select() == 0) {
-            path = SERVER_INPUT_FILES_ROOT + filename;
-        } 
-        else {
-            path = SERVER_OUTPUT_FILES_ROOT + filename;
-        }
-    
-        // Open file for writing (append mode)
-        std::ofstream outfile(path, std::ios::binary | std::ios::app);
-        if (!outfile.is_open()) {
-            std::cerr << "Error: Failed to open file at " << path << std::endl;
-            return grpc::Status(grpc::StatusCode::INTERNAL, "Server failed to open the file for writing.");
-        }
-    
-        // Write content to file
-        outfile << content;
-        if (outfile.fail()) {
-            std::cerr << "Error: Failed to write content to " << path << std::endl;
-            outfile.close();
-            return grpc::Status(grpc::StatusCode::INTERNAL, "Server failed to write content to the file.");
-        }
-    
-        outfile.close();
-    
-        // Get updated timestamp
-        try {
-            auto file_time = std::filesystem::last_write_time(path);
-            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(file_time - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-            response->set_timestamp(sctp.time_since_epoch().count());
-        } 
-        catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "Warning: Could not get timestamp: " << e.what() << std::endl;
-            response->set_timestamp(0);
-        }
-    
-        response->set_length(content.length());
-        std::cout << "Successfully wrote " << content.length() << " bytes to '" << filename << "'" << std::endl;
-        
-        return grpc::Status::OK;
-    }
-    
     grpc::Status close(grpc::ServerContext* context, grpc::ServerReader<afs_operation::FileRequest>* reader, afs_operation::FileResponse* response) override {
         
         afs_operation::FileRequest request;
@@ -320,7 +184,7 @@ class FileSystem final : public afs_operation::operators::Service{
             if (timestamp_server > timestamp){
                 // this means the client version was an old version
                 // then we get the content of the file
-                std::fstream new_content(path);
+                std::ifstream new_content(path,std::ios::binary);
                 
             
                 // sstream can help reading the entire contents of the file
