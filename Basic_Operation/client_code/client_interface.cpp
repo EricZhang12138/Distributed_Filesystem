@@ -4,6 +4,8 @@
 #include <fstream>
 #include <map>
 #include <sstream> 
+#include <chrono>
+#include <thread>
 
 
 #include <grpcpp/grpcpp.h>
@@ -412,6 +414,26 @@ public:
 };
 
 
+void opt_test(std::string filename){
+    std::string address = "localhost:50051";
+    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(
+        address,
+        grpc::InsecureChannelCredentials()
+    );
+    FileSystemClient client(channel);
+
+    client.open_file(filename,1);
+
+    std::string data = "Haha, I am last to close";
+
+    client.write_file(filename,data);
+    client.close_file(filename);
+
+}
+
+
+
+
 int main(int argc, char *argv[]){
     if(argc < 2){
         std::cerr<<"Usage: binFile <File To Op>";
@@ -429,14 +451,17 @@ int main(int argc, char *argv[]){
     if (client.open_file(filename,1) == false){
         std::cout << "gg" <<std::endl;
     }
-    // auto str = client.read_file_line(filename);
-    // if (str != std::nullopt){
-    // std::cout << "the read line is " << *str << std::endl;
-    // }
+
     std::string data = "Hello again";
     client.write_file(filename, data);
     
     client.close_file(filename);
+    std::thread thread(opt_test,"test1.txt");
+    thread.detach();
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    client.open_file(filename,1);
 
     return 0;
 

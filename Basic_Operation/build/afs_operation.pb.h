@@ -639,11 +639,7 @@ class FileResponse final : public ::google::protobuf::Message
     kLengthFieldNumber = 2,
     kUpdateBitFieldNumber = 4,
   };
-<<<<<<< HEAD
   // bytes content = 1;
-=======
-  // string content = 1;
->>>>>>> origin/basic_operations
   void clear_content() ;
   const ::std::string& content() const;
   template <typename Arg_ = const ::std::string&, typename... Args_>
@@ -693,11 +689,7 @@ class FileResponse final : public ::google::protobuf::Message
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
   static const ::google::protobuf::internal::TcParseTable<2, 4,
-<<<<<<< HEAD
                                    0, 0,
-=======
-                                   0, 42,
->>>>>>> origin/basic_operations
                                    2>
       _table_;
 
@@ -1368,11 +1360,7 @@ inline void FileRequest::set_allocated_content(::std::string* PROTOBUF_NULLABLE 
 
 // FileResponse
 
-<<<<<<< HEAD
 // bytes content = 1;
-=======
-// string content = 1;
->>>>>>> origin/basic_operations
 inline void FileResponse::clear_content() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.content_.ClearToEmpty();
@@ -1387,11 +1375,7 @@ template <typename Arg_, typename... Args_>
 PROTOBUF_ALWAYS_INLINE void FileResponse::set_content(Arg_&& arg, Args_... args) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_._has_bits_[0] |= 0x00000001U;
-<<<<<<< HEAD
   _impl_.content_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
-=======
-  _impl_.content_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
->>>>>>> origin/basic_operations
   // @@protoc_insertion_point(field_set:afs_operation.FileResponse.content)
 }
 inline ::std::string* PROTOBUF_NONNULL FileResponse::mutable_content()
