@@ -59,38 +59,46 @@ public:
             request.set_filename(filename);
             request.set_path_select(path);
 
+            
+            std::string file_path = "./tmp/cache/"+filename;
+
             afs_operation::FileResponse response_temp;
 
-            grpc::ClientContext context;
+            int num_of_retries = 0;
+            grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
+            
+            while(num_of_retries < 3 && !status.ok()){
+                grpc::ClientContext context;
+                std::unique_ptr<grpc::ClientReader<afs_operation::FileResponse>> reader(stub_->open(&context, request));
 
-            std::unique_ptr<grpc::ClientReader<afs_operation::FileResponse>> reader(stub_->open(&context, request));
-
-            // check if call succeeded
-            std::string file_path = "./tmp/cache/"+filename;
-            std::ofstream outfile(file_path, std::ios::binary);
-
-            if (!outfile.is_open()){
-                std::cerr << "Failed to create file at " << "file_path" << std::endl;
-                return false ;
-            }else{
-                std::cout << "File cached successfully" << std::endl;
-            }
-
-            while(reader->Read(&response_temp)){
-                struct FileInfo file_info{false, response_temp.timestamp(), filename};
-                cache[filename] = file_info;
-                if(response_temp.length() > 0)
-                    outfile<<response_temp.content();
-                if (outfile.fail()){
-                    std::cerr << "Can not write data to the local cache" << std::endl;
-                    cache.erase(filename);
-                    outfile.close();
-                    return false;
+                std::ofstream outfile(file_path, std::ios::binary);
+                if (!outfile.is_open()){
+                    std::cerr << "Failed to create file at " << "file_path" << std::endl;
+                    return false ;
+                }else{
+                    std::cout << "File cached successfully" << std::endl;
                 }
 
-            }
-            outfile.close();
+                while(reader->Read(&response_temp)){
+                    struct FileInfo file_info{false, response_temp.timestamp(), filename};
+                    cache[filename] = file_info;
+                    if(response_temp.length() > 0)
+                        outfile<<response_temp.content();
+                    if (outfile.fail()){
+                        std::cerr << "Can not write data to the local cache" << std::endl;
+                        cache.erase(filename);
+                        outfile.close();
+                        return false;
+                    }
 
+                }
+                outfile.close();
+                status = reader->Finish();
+                num_of_retries ++;
+            }
+            if (!status.ok()){
+                std::cerr << "After 3 tries, Failed to Open the file from the server" << std::endl;
+            }
 
             auto read_stream = std::make_unique<std::ifstream>(file_path);
             auto write_stream = std::make_unique<std::ofstream>(file_path, std::ios::app);
@@ -102,7 +110,7 @@ public:
             }
             opened_files[filename] = FileStreams{std::move(read_stream), std::move(write_stream)};
             
-            grpc::Status status = reader->Finish();
+            
         
             if (status.ok()) {
                 // std::cout << "File retrieved successfully!" << std::endl;
@@ -142,70 +150,96 @@ public:
             }
 
         }else{
-            // open locally
-            // However when we open locally, we need to check from the server whether our version is the latest version
+            // update locally
+            // Check if file is already open by this client
             if (opened_files.find(filename)!=opened_files.end()){
                 std::cerr<< "The file is already open, don't try to open it again please" << std::endl;
                 return false;
-            }else{
+            }
 
+            // Prepare for RPC request
             std::string file_path = "./tmp/cache/"+filename;
             int64_t timestamp = cache[filename].timestamp;
+            
             afs_operation::FileRequest request;
             request.set_filename(filename);
             request.set_timestamp(timestamp);
-            request.set_path_select(path); // also send path_select for the server
+            request.set_path_select(path); 
 
-            afs_operation::FileResponse response;
-            grpc::ClientContext context;
-            // get the response to check whether we need to update
-            std::unique_ptr<grpc::ClientReader<afs_operation::FileResponse>> reader(stub_->compare(&context, request));
+            // Prepare for the retry loop
+            int num_of_retries = 0;
+            grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
+            
+            // stringstream as an in-memory buffer.
+            std::stringstream content_buffer(std::ios::binary | std::ios::in | std::ios::out);
+            int update_bit = 0;
+            int64_t new_timestamp = 0;
+            
+            while(num_of_retries < 3 && !status.ok()){
+                
+                grpc::ClientContext context;
+                afs_operation::FileResponse response_chunk;
 
-//            grpc::Status status ();
-            std::ofstream outfile(file_path);
-            if(!outfile.is_open()){
-                std::cerr << "Error: Could not open the file at " << file_path << std::endl;
-                return false;
+                //clear buffers from any previous failed attempt
+                content_buffer.str(""); // Clear the stringstream's content
+                content_buffer.clear(); // Clear its error flags
+                update_bit = 0;
+                new_timestamp = 0;
+                
+                std::unique_ptr<grpc::ClientReader<afs_operation::FileResponse>> reader(stub_->compare(&context, request));
+
+                // Read all chunks into the temporary buffer
+                while(reader->Read(&response_chunk)){
+                    // server sends the same data on every chunk
+                    update_bit = response_chunk.update_bit();
+                    new_timestamp = response_chunk.timestamp();
+                    
+                    if(update_bit == 1) { 
+                        // Only save the content if the server says we need to update
+                        content_buffer << response_chunk.content();
+                    }
+                }
+                
+                status = reader->Finish();
+                num_of_retries++;
+
             }
-            while(reader->Read(&response)){
-                struct FileInfo file_info{false, response.timestamp(), filename};
-                cache[filename] = file_info;
-                outfile<<response.content();
-                if (outfile.fail()){
-                    std::cerr << "Can not write data to the local cache" << std::endl;
-                    cache.erase(filename);
+
+            if (!status.ok()) {
+                std::cerr << "RPC failed during compare after 3 attempts: " << status.error_message() << std::endl;
+                return false; 
+            }
+
+            // RPC was successful. Now, update local cache and file.
+            if (new_timestamp != 0) {
+                cache[filename].timestamp = new_timestamp;
+                cache[filename].is_changed = false;
+            }
+
+            if (update_bit == 1) {
+                // we can safely open the local file and overwrite it.
+                std::cout << "Cache is stale. Overwriting local file..." << std::endl;
+                std::ofstream outfile(file_path, std::ios::binary | std::ios::trunc);
+                
+                if (!outfile.is_open()) {
+                    std::cerr << "Error: Could not open the file at " << file_path << " to overwrite." << std::endl;
+                    return false;
+                }
+                outfile << content_buffer.rdbuf(); 
+                if (outfile.fail()) {
+                    std::cerr << "Error: Failed to write new content to local file." << std::endl;
                     outfile.close();
                     return false;
                 }
+                outfile.close();
+                std::cout << "Successfully overwrote file: " << file_path << std::endl;
+            
+            } else {
+                // We did not delete it, so we do nothing.
+                std::cout << "File: "<< file_path << " is valid and is now opened." << std::endl;
             }
-            outfile.close();
-            // if (!status.ok()) {
-            //     std::cerr << "RPC failed during compare: " << status.error_message() << std::endl;
-            //     return false;
-            // }
-
-            // if (response.update_bit() == 1){
-            //     std::cout << "Cache is stale. Overwriting local file..." << std::endl;
-            //     int64_t new_timestamp = response.timestamp();
-            //     std::string new_content = response.content();
-            //     // overwrite the new content to the local file
-            //     std::ofstream outfile(file_path);
-            //     if (!outfile.is_open()) {
-            //         std::cerr << "Error: Could not open the file at " << file_path << std::endl;
-            //         return false;
-            //     }
-            //     outfile << new_content;
-                
-            //     outfile.close();
-
-            //     //update the FileInfo object
-            //     cache[filename].timestamp = new_timestamp;
-            //     cache[filename].is_changed = false;
-            //     std::cout << "Successfully overwrote file: " << file_path << std::endl;
-            // }else{
-            //     std::cout << "File: "<< file_path << " is valid and is now opened." << std::endl;
-            // }
-            // open the local file which is guaranteed to be up-to-date
+            
+            // Add the Filestreams
             auto read_stream = std::make_unique<std::ifstream>(file_path);
             auto write_stream = std::make_unique<std::ofstream>(file_path, std::ios::app);
 
@@ -213,10 +247,10 @@ public:
                 std::cerr << "Failed to open the local file stream." << std::endl;
                 return false;
             }
+            
             opened_files[filename] = FileStreams{std::move(read_stream), std::move(write_stream)};
             std::cout << "File '" << filename << "' is now open for use." << std::endl;
-             return true;
-            }
+            return true;
         }
     }
 
@@ -354,38 +388,37 @@ public:
             // std::string content = buffer.str();
             const std::size_t chunk_size = 4096;
             char buffer[chunk_size];
-            grpc::ClientContext context;
-            afs_operation::FileResponse response;
-            std::unique_ptr<grpc::ClientWriter<afs_operation::FileRequest>> writer(
-                stub_->close(&context, &response)
-            );
-            // afs_operation::FileRequest request;
-            
-            // request.set_content(content);
-            while(true){
-                file_stream.read(buffer, chunk_size);
-                std::streamsize len = file_stream.gcount();
 
-                if(len<=0)break;
-                afs_operation::FileRequest request;
-                request.set_path_select(1);
-                request.set_filename(filename);
-                request.set_content(buffer, len);
-                writer->Write(request);
-            }
 
-            writer->WritesDone();
+            afs_operation::FileResponse response; // response can be reused 
+            int num_of_tries = 0;
+            grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
+            while (num_of_tries < 3 && !status.ok()){
+                grpc::ClientContext context;     // context can't be reused, so each try needs new context 
+                std::unique_ptr<grpc::ClientWriter<afs_operation::FileRequest>> writer(   // writer can't be reused 
+                    stub_->close(&context, &response)
+                );
+                file_stream.clear(); // Clear EOF flag
+                file_stream.seekg(0, std::ios::beg); // Rewind to start
+                while(true){
+                    file_stream.read(buffer, chunk_size);
+                    std::streamsize len = file_stream.gcount();
 
-            grpc::Status status = writer->Finish();
+                    if(len<=0)break;
+                    afs_operation::FileRequest request;
+                    request.set_path_select(1);
+                    request.set_filename(filename);
+                    request.set_content(buffer, len);
 
-            // Prepare and send the create RPC to the server.
-            // afs_operation::FileRequest request;
-            // request.set_filename(filename);
-            // request.set_content(content);
+                    if (!writer->Write(request)){
+                        break;
+                    }
+                }
 
-            // afs_operation::FileResponse response;
-            // grpc::ClientContext context;
-            // grpc::Status status = stub_->create(&context, request, &response);
+                writer->WritesDone();
+                status = writer->Finish();
+                num_of_tries ++;
+        }
 
             if (!status.ok()) {
                 std::cerr << "RPC failed while flushing file to server: " << status.error_message() << std::endl;

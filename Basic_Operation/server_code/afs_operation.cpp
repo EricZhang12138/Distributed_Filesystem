@@ -234,13 +234,6 @@ class FileSystem final : public afs_operation::operators::Service{
             return grpc::Status(grpc::StatusCode::INTERNAL, "Server failed to get the timestamp of the file on the server.");
         }
 
-        
-        
-
-
-
-
-
     }
 
 
