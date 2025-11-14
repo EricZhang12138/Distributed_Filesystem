@@ -14,27 +14,34 @@ PROTOC := protoc
 GRPC_CPP_PLUGIN_PATH ?= $(shell which grpc_cpp_plugin)
 GRPC_PLUGIN := --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN_PATH)
 
-# Source and Generated Files
+# --- Source and Generated Files ---
+
 PROTO_FILE := $(PROTO_DIR)/afs_operation.proto
-# Prepend build directory to all generated file paths
+
+# Generated proto files
 PROTO_GEN_CC := $(BUILD_DIR)/afs_operation.pb.cc $(BUILD_DIR)/afs_operation.grpc.pb.cc
 PROTO_GEN_H := $(PROTO_GEN_CC:.cc=.h)
 PROTO_GEN_O := $(PROTO_GEN_CC:.cc=.o)
 
 # Server files
-SERVER_SRC := $(SERVER_DIR)/afs_operation.cpp
-SERVER_OBJ := $(BUILD_DIR)/afs_operation.o
+SERVER_SRC := $(SERVER_DIR)/filesystem_server.cpp
+SERVER_HPP := $(SERVER_DIR)/filesystem_server.hpp
+SERVER_OBJ := $(BUILD_DIR)/filesystem_server.o
 SERVER_EXEC := afs_server
 
 # Client files
-CLIENT_SRC := $(CLIENT_DIR)/client_interface.cpp
-CLIENT_OBJ := $(BUILD_DIR)/client_interface.o
+CLIENT_SRC := $(CLIENT_DIR)/filesystem_client.cpp
+CLIENT_HPP := $(CLIENT_DIR)/filesystem_client.hpp
+CLIENT_OBJ := $(BUILD_DIR)/filesystem_client.o
 CLIENT_EXEC := afs_client
 
+# --- Flags and Libraries ---
+
 # pkg-config settings for linking
-# We add -I$(BUILD_DIR) so the compiler can find the generated headers
 LDFLAGS := $(shell pkg-config --libs grpc++ protobuf)
-CXXFLAGS += $(shell pkg-config --cflags grpc++ protobuf) -I$(BUILD_DIR)
+# We add -I$(BUILD_DIR) so the compiler can find the generated headers
+# We add -I$(SERVER_DIR) and -I$(CLIENT_DIR) for our own headers
+CXXFLAGS += $(shell pkg-config --cflags grpc++ protobuf) -I$(BUILD_DIR) -I$(SERVER_DIR) -I$(CLIENT_DIR)
 
 # --- TARGETS ---
 
@@ -60,12 +67,14 @@ $(PROTO_GEN_CC) $(PROTO_GEN_H): $(PROTO_FILE) | $(BUILD_DIR)
 # --- COMPILATION RULES ---
 
 # Rule to compile the server source file
-$(SERVER_OBJ): $(SERVER_SRC) $(PROTO_GEN_H)
+# Now depends on the server's .hpp file as well
+$(SERVER_OBJ): $(SERVER_SRC) $(SERVER_HPP) $(PROTO_GEN_H)
 	@echo "Compiling server source: $<"
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Rule to compile the client source file
-$(CLIENT_OBJ): $(CLIENT_SRC) $(PROTO_GEN_H)
+# Now depends on the client's .hpp file as well
+$(CLIENT_OBJ): $(CLIENT_SRC) $(CLIENT_HPP) $(PROTO_GEN_H)
 	@echo "Compiling client source: $<"
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 

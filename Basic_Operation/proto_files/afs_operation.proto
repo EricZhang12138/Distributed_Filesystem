@@ -6,15 +6,14 @@ message InitialiseRequest{
     string code_to_initialise = 1;
 }
 message InitialiseResponse{
-    string input_path = 1;
-    string output_path = 2;
+    string root_path = 1;
 }
 
 message FileRequest {
     string filename = 1;
-    int32 path_select = 2;
-    int64 timestamp = 3;
-    string content = 4;
+    int64 timestamp = 2;
+    string content = 3;
+    string directory = 4;
 }
 
 message FileResponse {
@@ -23,6 +22,9 @@ message FileResponse {
     int64 timestamp = 3;
     int32 update_bit =4;  // update = 1 -> needs to update content on the client otherwise no
 }
+
+message ListDirectoryRequest{}
+
 
 service operators{
     rpc request_dir (InitialiseRequest) returns (InitialiseResponse);
