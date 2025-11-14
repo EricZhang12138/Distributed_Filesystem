@@ -38,6 +38,8 @@ private:
     // Map of locally open file handles
     std::map<std::string, FileStreams> opened_files;
 
+
+
 public:
     /**
      * @brief Constructs the client and initializes the connection with the server.
@@ -69,7 +71,8 @@ public:
      * @param directory The server-side path.
      * @return true on success, false on failure.
      */
-    bool write_file(std::string& filename, std::string& data, std::string& directory);
+    bool write_file(std::string& filename, std::string& data, std::string& directory);  
+    // currently write_file is append only because I used std::ios::app and it forces all the writes to append to the file and you can't change the existing content
 
     /**
      * @brief Creates a new, empty file locally and opens it for writing.
@@ -86,4 +89,7 @@ public:
      * @return true if the file was successfully closed (and flushed, if needed), false otherwise.
      */
     bool close_file(const std::string& filename, const std::string& directory);
+
+
+    std::optional<std::map<std::string, std::string>> ls_contents(const std::string& directory); // list the contents in the specified directory
 };

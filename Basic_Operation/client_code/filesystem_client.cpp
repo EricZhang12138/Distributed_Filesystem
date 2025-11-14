@@ -21,7 +21,7 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
 
 
 bool FileSystemClient::open_file(std::string filename, std::string path){
-
+    
     std::string cache_dir = "./tmp/cache/" + path;
     std::string file_location = cache_dir + "/" + filename;
     
@@ -383,17 +383,30 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
 }
 
 
-void opt_test(std::string filename){
-    std::string address = "localhost:50051";
-    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(
-        address,
-        grpc::InsecureChannelCredentials()
-    );
-    FileSystemClient client(channel);
+std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(const std::string& directory){
+    grpc::ClientContext context;  
+    afs_operation::ListDirectoryRequest request;
+    afs_operation::ListDirectoryResponse response;
+    request.set_directory(directory);
 
-    std::string data = "Haha, I am last to close";
-    // This function seems incomplete, but I've preserved it.
+    grpc::Status status = stub_ -> ls(&context, request, &response);
+    if (!status.ok()){
+        std::cerr << "Failed to load the directory content from the server: " << status.error_message() << std::endl;
+        return std::nullopt;
+    }
+
+    for (const auto& [name, type] : response.entry_list()) {
+    std::cout << name << ": " << type << std::endl;
+    }
+    // now we get the current directory
+    std::map<std::string, std::string> entry_map;
+    for (const auto& [name, type] : response.entry_list()) {
+        entry_map[name] = type;
+    }
+    return entry_map;
 }
+
+
 
 
 int main(int argc, char *argv[]){

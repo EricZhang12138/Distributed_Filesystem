@@ -23,7 +23,15 @@ message FileResponse {
     int32 update_bit =4;  // update = 1 -> needs to update content on the client otherwise no
 }
 
-message ListDirectoryRequest{}
+
+
+message ListDirectoryRequest{
+    string directory =1;
+}
+
+message ListDirectoryResponse{
+    map<string,string> entry_list =1;
+}
 
 
 service operators{
@@ -31,4 +39,5 @@ service operators{
     rpc open (FileRequest) returns (stream FileResponse);
     rpc close (stream FileRequest) returns (FileResponse);
     rpc compare (FileRequest) returns (stream FileResponse);
+    rpc ls (ListDirectoryRequest) returns (ListDirectoryResponse);
 }

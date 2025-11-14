@@ -4,6 +4,7 @@
 #include <sstream>
 #include <chrono> // For timestamp logic
 
+
 grpc::Status FileSystem::request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) {
     if (request->code_to_initialise() == "I want input/output directory"){
         std::cout << "Received client request(later I should add the name of the client)" << std::endl;
@@ -154,9 +155,50 @@ grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operati
 }
 
 
+// In filesystem_server.cpp
+
+grpc::Status FileSystem::ls(grpc::ServerContext* context, const afs_operation::ListDirectoryRequest* request, afs_operation::ListDirectoryResponse* response){
+    std::string directory = request -> directory();
+    
+    std::filesystem::path directory_path(directory);
+    
+    try {
+        // Check if the path exists and is a directory
+        if (!std::filesystem::exists(directory_path)) {
+            std::cerr << "Error: Directory not found: " << directory << std::endl;
+            return grpc::Status(grpc::StatusCode::NOT_FOUND, "Specified Directory not found");
+        }
+        if (!std::filesystem::is_directory(directory_path)) {
+            std::cerr << "Error: Path is not a directory: " << directory << std::endl;
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Path is not a directory");
+        }
+
+        std::cout << "Listing contents for: " << directory_path.string() << std::endl;
+
+        // Get mutable pointer to protobuf map
+        auto* entry_map = response->mutable_entry_list();  
+        
+        // Iterate over the path provided in the request
+        for(const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(directory_path)){
+            std::string name = entry.path().filename().string();
+            if (entry.is_directory()){
+                (*entry_map)[name] = "Directory";
+            } else if(entry.is_regular_file()){
+                (*entry_map)[name] = "Regular_File";
+            }
+        }
+    } catch(std::filesystem::filesystem_error& e){
+        std::cerr << "Error: " << e.what() << std::endl;
+        return grpc::Status(grpc::StatusCode::ABORTED, "Error occurred while iterating through the directory");
+    }
+    
+    return grpc::Status::OK;
+}
+
+
 void FileSystem::RunServer(){
     std::string server_address = "0.0.0.0:50051";
-
+    
     grpc::ServerBuilder builder;
     
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
