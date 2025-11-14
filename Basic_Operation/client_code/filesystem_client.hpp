@@ -38,7 +38,9 @@ private:
     // Map of locally open file handles
     std::map<std::string, FileStreams> opened_files;
 
+    std::string server_root_path_;
 
+    std::string resolve_server_path(const std::string& user_path);
 
 public:
     /**

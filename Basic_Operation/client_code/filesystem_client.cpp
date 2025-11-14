@@ -14,15 +14,36 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
     grpc::Status status = stub_ -> request_dir(&context, request, &response);
     if (!status.ok()){
         std::cerr << "Unable to retrieve the path for input/output files on the server" << std::endl;
+        this->server_root_path_ ="/"; // default when it fails
     }else{
-        std::cerr << "We are at root directory: " << response.root_path() << std::endl;
+        // Store the root path instead of just printing it
+        this->server_root_path_ = response.root_path(); 
+        std::cerr << "Client initialized. Server root directory: " << this->server_root_path_ << std::endl; 
     }
+}
+
+std::string FileSystemClient::resolve_server_path(const std::string& user_path) {
+    std::filesystem::path root(this->server_root_path_);
+    std::filesystem::path user(user_path);
+
+    // If user_path is absolute (e.g., "/test_data"), 
+    // we need its relative part to join with our root.
+    if (user.is_absolute()) {
+        user = user.relative_path();
+    }
+    
+    // The '/' operator handles joining correctly (e.g., "/" + "test" -> "/test")
+    std::filesystem::path full_path = root / user;
+    return full_path.generic_string(); // Use generic_string for consistent '/' separators
 }
 
 
 bool FileSystemClient::open_file(std::string filename, std::string path){
     
-    std::string cache_dir = "./tmp/cache/" + path;
+    std::string resolved_path = resolve_server_path(path);
+    std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
+
+    std::string cache_dir = "./tmp/cache/" + resolved_path; // Use resolved_path
     std::string file_location = cache_dir + "/" + filename;
     
     // Case 1: File is NOT in the local cache
@@ -37,7 +58,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 
         afs_operation::FileRequest request;
         request.set_filename(filename);
-        request.set_directory(path);
+        request.set_directory(resolved_path);
         
         std::string file_path = file_location; // Use the full file_location path
 
@@ -112,7 +133,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         afs_operation::FileRequest request;
         request.set_filename(filename);
         request.set_timestamp(timestamp);
-        request.set_directory(path); 
+        request.set_directory(resolved_path); 
 
         int num_of_retries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
@@ -191,7 +212,10 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 }
 
 std::optional<std::string> FileSystemClient::read_file_line(std::string& filename, std::string& directory){
-    std::string file_location = "./tmp/cache/" + directory + "/" + filename;
+    
+    std::string resolved_path = resolve_server_path(directory);
+    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
+
     if (cache.find(file_location)==cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
         return std::nullopt;
@@ -215,7 +239,10 @@ std::optional<std::string> FileSystemClient::read_file_line(std::string& filenam
 
 
 bool FileSystemClient::write_file(std::string& filename, std::string& data, std::string& directory){
-    std::string file_location = "./tmp/cache/" + directory + "/" + filename;
+
+    std::string resolved_path = resolve_server_path(directory);
+    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
+
     if (cache.find(file_location)==cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
         return false;
@@ -243,8 +270,10 @@ bool FileSystemClient::write_file(std::string& filename, std::string& data, std:
 
 
 bool FileSystemClient::create_file(const std::string& filename, const std::string& path) {
-    std::string file_location = "./tmp/cache/" + path + "/" + filename;
-    std::string cache_dir = "./tmp/cache/" + path;
+
+    std::string resolved_path = resolve_server_path(path);
+    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
+    std::string cache_dir = "./tmp/cache/" + resolved_path;
 
     if (cache.count(file_location) || opened_files.count(file_location)) {
         std::cerr << "Error: File '" << filename << "' already exists." << std::endl;
@@ -284,7 +313,8 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
 
 
 bool FileSystemClient::close_file(const std::string& filename, const std::string& directory) {
-    std::string file_location = "./tmp/cache/" + directory + "/" + filename;
+    std::string resolved_path = resolve_server_path(directory);
+    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
     
     auto opened_file_it = opened_files.find(file_location);
     if (opened_file_it == opened_files.end()) {
@@ -342,7 +372,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
 
                 if(len<=0)break;
                 afs_operation::FileRequest request;
-                request.set_directory(directory);
+                request.set_directory(resolved_path);
                 request.set_filename(filename);
                 request.set_content(buffer, len);
 
@@ -387,7 +417,9 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
     grpc::ClientContext context;  
     afs_operation::ListDirectoryRequest request;
     afs_operation::ListDirectoryResponse response;
-    request.set_directory(directory);
+    std::string resolved_path = resolve_server_path(directory);
+    std::cout << "DEBUG: Listing contents for resolved path: " << resolved_path << std::endl;
+    request.set_directory(resolved_path); // Use resolved_path
 
     grpc::Status status = stub_ -> ls(&context, request, &response);
     if (!status.ok()){

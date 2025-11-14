@@ -8,7 +8,7 @@
 grpc::Status FileSystem::request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) {
     if (request->code_to_initialise() == "I want input/output directory"){
         std::cout << "Received client request(later I should add the name of the client)" << std::endl;
-        response->set_root_path("/");
+        response->set_root_path(root_dir);
         return grpc::Status::OK;
     }else{
         std::cerr << "There is an error while passing the input/output files directory"<<std::endl;
