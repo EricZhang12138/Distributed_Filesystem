@@ -22,7 +22,7 @@ struct FileInfo{
 class FileSystem final : public afs_operation::operators::Service{
 
 public: 
-    std::string root_dir = "/afs_server_root";
+    std::string root_dir = "/Users/ericzhang/Documents/Distributed_Systems/Testing";
     void RunServer();
 
 private:

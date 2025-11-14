@@ -440,13 +440,8 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
 
 
 
-
-int main(int argc, char *argv[]){
-    if(argc < 2){
-        std::cerr<<"Usage: binFile <File To Op>";
-        exit(1);
-    }
-
+int main() {
+    // 1. Setup connection
     std::string address = "localhost:50051";
     std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(
         address,
@@ -454,45 +449,59 @@ int main(int argc, char *argv[]){
     );
 
     FileSystemClient client(channel);
-    std::string filename = argv[1];
+    std::cout << "Client connected to " << address << std::endl;
 
-    // Example Usage (you can add your own test logic here)
-    std::string my_path = "test_data";
+    // --- Part 1: Create, Write, and Close file.txt in folder1 ---
+    std::cout << "\n--- Scenario 1: Create, Write, Close ---" << std::endl;
     
-    std::cout << "--- Opening file: " << filename << " ---" << std::endl;
-    if (client.open_file(filename, my_path)) {
-        std::cout << "File open success." << std::endl;
-
-        std::cout << "--- Reading file ---" << std::endl;
-        while(auto line = client.read_file_line(filename, my_path)) {
-            std::cout << "Read: " << *line << std::endl;
-        }
-        std::cout << "--- End of read ---" << std::endl;
-
-        std::cout << "--- Writing to file ---" << std::endl;
-        std::string my_data = "\nThis is a new line from the client.\n";
-        client.write_file(filename, my_data, my_path);
-
-        std::cout << "--- Closing file ---" << std::endl;
-        client.close_file(filename, my_path);
-
-    } else {
-        std::cerr << "Failed to open file." << std::endl;
-    }
-
-    std::cout << "--- Creating new file: new_file.txt ---" << std::endl;
-    std::string new_file = "new_file.txt";
-    if (client.create_file(new_file, my_path)) {
-        std::string data1 = "This is line 1.\n";
-        std::string data2 = "This is line 2.\n";
-        client.write_file(new_file, data1, my_path);
-        client.write_file(new_file, data2, my_path);
+    std::string file1_name = "file.txt";
+    std::string file1_path = "folder1"; // Path is relative to server root
+    
+    std::cout << "Attempting to create: " << file1_path << "/" << file1_name << std::endl;
+    if (client.create_file(file1_name, file1_path)) {
+        std::cout << "Create success." << std::endl;
         
-        std::cout << "--- Closing new file ---" << std::endl;
-        client.close_file(new_file, my_path);
+        // Write to it
+        std::cout << "Attempting to write 'I love you'..." << std::endl;
+        std::string data = "I love you\n";
+        if (client.write_file(file1_name, data, file1_path)) {
+            std::cout << "Write success." << std::endl;
+        } else {
+            std::cerr << "Failed to write to file." << std::endl;
+        }
+        
+        // Close it
+        std::cout << "Attempting to close file..." << std::endl;
+        if (client.close_file(file1_name, file1_path)) {
+            std::cout << "Close success. File flushed to server." << std::endl;
+        } else {
+            std::cerr << "Failed to close file." << std::endl;
+        }
+
     } else {
-        std::cerr << "Failed to create new file." << std::endl;
+        std::cerr << "Failed to create file (it might already exist?): " << file1_name << std::endl;
     }
+
+    // --- Part 2: Open test.txt in /ABC ---
+    std::cout << "\n--- Scenario 2: Open File ---" << std::endl;
+    
+    std::string file2_name = "test.txt";
+    std::string file2_path = "ABC"; // Note: We send "ABC", not "/ABC"
+    
+    std::cout << "Attempting to open: " << file2_path << "/" << file2_name << std::endl;
+    
+    if (client.open_file(file2_name, file2_path)) {
+        std::cout << "File 'test.txt' opened successfully." << std::endl;
+        // Good practice to close it when done
+        client.close_file(file2_name, file2_path);
+    } else {
+        std::cerr << "Failed to open 'test.txt'. (This is normal if the file doesn't exist on the server)." << std::endl;
+    }
+
+    std::cout << "\n--- Scenario 2: directory listing ---" << std::endl;
+    client.ls_contents("");
+
+    std::cout << "\n--- Script finished ---" << std::endl;
 
     return 0;
 }
