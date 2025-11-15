@@ -108,7 +108,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             return false;
         }
 
-        auto read_stream = std::make_unique<std::ifstream>(file_location);
+        auto read_stream = std::make_unique<std::ifstream>(file_location, std::ios::binary);
         auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
 
         if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
@@ -197,7 +197,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             std::cout << "File: "<< file_location << " is valid and is now opened." << std::endl;
         }
         
-        auto read_stream = std::make_unique<std::ifstream>(file_location);
+        auto read_stream = std::make_unique<std::ifstream>(file_location, std::ios::binary);
         auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
 
         if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
@@ -211,28 +211,42 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
     }
 }
 
-std::optional<std::string> FileSystemClient::read_file_line(std::string& filename, std::string& directory){
+bool FileSystemClient::read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer){
     
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
 
     if (cache.find(file_location)==cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
-        return std::nullopt;
+        return false;
     } else {
         if (opened_files.find(file_location) == opened_files.end()){
             std::cerr << "File found in cache but it is not opened. Open the file by calling open_file()" << std::endl;
-            return std::nullopt;
+            return false;
         } else {
             auto it = opened_files.find(file_location);
             std::ifstream& file_stream = *(it->second.read_stream);
-            std::string line;
-
-            if (std::getline(file_stream, line)){
-                return line;
-            } else {
-                return std::nullopt; // EOF or error
+            // read the file from the cache
+            file_stream.seekg(offset, std::ios::beg);
+            if (!file_stream) {
+                // This check catches errors like seeking past the end of the file
+                std::cerr << "Error: Could not seek to offset " << offset << "." << std::endl;
+                return false;
             }
+            buffer.resize(size);
+
+            file_stream.read(buffer.data(), size);
+            size_t bytes_read = file_stream.gcount();
+
+            std::cout << "Requested " << size << " bytes, actually read " << bytes_read << "." << std::endl;
+
+            if (bytes_read < size) {
+                std::cout << "Warning: Reached end of file early." << std::endl;
+                // The buffer will contain 'bytes_read' valid characters.
+                // resize it to remove the unused space.
+                buffer.resize(bytes_read);
+            }
+            return true;
         }
     }
 }
@@ -305,7 +319,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     struct FileInfo file_info{true, 0, filename};
     cache[file_location] = file_info;
 
-    auto read_stream = std::make_unique<std::ifstream>(file_location);
+    auto read_stream = std::make_unique<std::ifstream>(file_location, std::ios::binary);
     auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
     
     if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
@@ -399,7 +413,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         if (!status.ok()) {
             std::cerr << "RPC failed while flushing file to server: " << status.error_message() << std::endl;
             // Re-open the file handles so the user can retry
-            auto read_s = std::make_unique<std::ifstream>(file_location);
+            auto read_s = std::make_unique<std::ifstream>(file_location, std::ios::binary);
             auto write_s = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
             opened_files[file_location] = FileStreams{std::move(read_s), std::move(write_s)};
             std::cerr << "File handles have been re-opened. Please try closing again." << std::endl;
@@ -445,7 +459,6 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
     }
     return entry_map;
 }
-
 
 
 int main() {
@@ -512,23 +525,31 @@ int main() {
         return 1;
     }
 
-    std::cout << "Reading line from file..." << std::endl;
-    std::string mutable_filename = filename; // read_file_line takes non-const ref
-    std::string mutable_path = path;       // read_file_line takes non-const ref
-    auto line_opt = client.read_file_line(mutable_filename, mutable_path);
+    std::cout << "Reading content from file..." << std::endl;
+    
+    std::vector<char> read_buffer;
+    // We know the content is "Hello, everyone!" (17 chars).
+    // Let's read 100 bytes from offset 0 to test.
+    const int read_size = 100;
+    const int read_offset = 0;
 
-    if (line_opt) {
-        std::string line = *line_opt;
-        std::cout << "Read: '" << line << "'" << std::endl;
+    // Call the new, correct read_file function
+    if (client.read_file(filename, path, read_size, read_offset, read_buffer)) {
+        
+        // Convert the vector<char> to a std::string for comparison
+        std::string content(read_buffer.begin(), read_buffer.end());
+        
+        std::cout << "Read: '" << content << "'" << std::endl;
         
         std::string expected = "Hello, everyone!";
-        if (line == expected) {
+        if (content == expected) {
             std::cout << "SUCCESS: Content is correct!" << std::endl;
         } else {
             std::cout << "FAILURE: Expected '" << expected << "'" << std::endl;
+            std::cout << "Read size: " << content.size() << ", Expected size: " << expected.size() << std::endl;
         }
     } else {
-        std::cerr << "Failed to read line from file." << std::endl;
+        std::cerr << "Failed to read from file." << std::endl;
     }
 
     // Clean up

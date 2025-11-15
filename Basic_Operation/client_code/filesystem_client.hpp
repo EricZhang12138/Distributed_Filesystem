@@ -64,7 +64,7 @@ public:
      * @param directory The server-side path.
      * @return A string containing the line, or std::nullopt if at EOF or on error.
      */
-    std::optional<std::string> read_file_line(std::string& filename, std::string& directory);
+    bool read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer);
 
     /**
      * @brief Writes data to a previously opened file's local cache.
