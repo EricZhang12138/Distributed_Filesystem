@@ -109,7 +109,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         }
 
         auto read_stream = std::make_unique<std::ifstream>(file_location);
-        auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::app);
+        auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
 
         if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
             std::cerr << "Failed to open local file streams after download." << std::endl;
@@ -198,7 +198,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         }
         
         auto read_stream = std::make_unique<std::ifstream>(file_location);
-        auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::app);
+        auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
 
         if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
             std::cerr << "Failed to open the local file stream." << std::endl;
@@ -238,7 +238,7 @@ std::optional<std::string> FileSystemClient::read_file_line(std::string& filenam
 }
 
 
-bool FileSystemClient::write_file(std::string& filename, std::string& data, std::string& directory){
+bool FileSystemClient::write_file(const std::string& filename, const std::string& data, const std::string& directory, std::streampos position){
 
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
@@ -254,7 +254,15 @@ bool FileSystemClient::write_file(std::string& filename, std::string& data, std:
             auto it = opened_files.find(file_location);
             std::ofstream& file_stream = *(it->second.write_stream);
 
-            file_stream << data;
+            file_stream.seekp(position);
+            if (file_stream.fail()){
+                std::cerr << "Error: Failed to seek to position " << position << "in " <<filename<< std::endl; 
+                file_stream.clear(); //clear the fail bit
+                return false;
+            }
+
+            file_stream.write(data.data(), data.size());  // .data() and .size() are all for strings
+            // the file_stream << data is for formatted string only and will stop writing as soon as it hits a null
 
             if (file_stream.fail()) {
                 std::cerr << "Error: Failed to write data to " << filename << std::endl;
@@ -298,7 +306,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     cache[file_location] = file_info;
 
     auto read_stream = std::make_unique<std::ifstream>(file_location);
-    auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::app);
+    auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
     
     if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
         std::cerr << "Failed to open newly created file stream for: " << file_location<< std::endl;
@@ -392,7 +400,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
             std::cerr << "RPC failed while flushing file to server: " << status.error_message() << std::endl;
             // Re-open the file handles so the user can retry
             auto read_s = std::make_unique<std::ifstream>(file_location);
-            auto write_s = std::make_unique<std::ofstream>(file_location, std::ios::app);
+            auto write_s = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
             opened_files[file_location] = FileStreams{std::move(read_s), std::move(write_s)};
             std::cerr << "File handles have been re-opened. Please try closing again." << std::endl;
             return false; 
@@ -451,57 +459,89 @@ int main() {
     FileSystemClient client(channel);
     std::cout << "Client connected to " << address << std::endl;
 
-    // --- Part 1: Create, Write, and Close file.txt in folder1 ---
-    std::cout << "\n--- Scenario 1: Create, Write, Close ---" << std::endl;
-    
-    std::string file1_name = "file.txt";
-    std::string file1_path = "folder1"; // Path is relative to server root
-    
-    std::cout << "Attempting to create: " << file1_path << "/" << file1_name << std::endl;
-    if (client.create_file(file1_name, file1_path)) {
+    // --- Scenario 1: Test Positional Write ---
+    std::cout << "\n--- Scenario 1: Create, Write, Overwrite ---" << std::endl;
+    std::string filename = "positional_test.txt";
+    std::string path = "test_dir"; // Using a new directory
+
+    // Create the file
+    std::cout << "Attempting to create: " << path << "/" << filename << std::endl;
+    if (!client.create_file(filename, path)) {
+        std::cerr << "Create failed. (File might already exist from a previous run.)" << std::endl;
+        std::cerr << "Attempting to open it instead..." << std::endl;
+        // If create fails, try opening it. If open also fails, then exit.
+        if (!client.open_file(filename, path)) {
+            std::cerr << "Failed to create OR open file. Exiting." << std::endl;
+            return 1;
+        }
+         std::cout << "File opened successfully. Proceeding to overwrite." << std::endl;
+    } else {
         std::cout << "Create success." << std::endl;
-        
-        // Write to it
-        std::cout << "Attempting to write 'I love you'..." << std::endl;
-        std::string data = "I love you\n";
-        if (client.write_file(file1_name, data, file1_path)) {
-            std::cout << "Write success." << std::endl;
-        } else {
-            std::cerr << "Failed to write to file." << std::endl;
-        }
-        
-        // Close it
-        std::cout << "Attempting to close file..." << std::endl;
-        if (client.close_file(file1_name, file1_path)) {
-            std::cout << "Close success. File flushed to server." << std::endl;
-        } else {
-            std::cerr << "Failed to close file." << std::endl;
-        }
-
-    } else {
-        std::cerr << "Failed to create file (it might already exist?): " << file1_name << std::endl;
     }
 
-    // --- Part 2: Open test.txt in /ABC ---
-    std::cout << "\n--- Scenario 2: Open File ---" << std::endl;
-    
-    std::string file2_name = "test.txt";
-    std::string file2_path = "ABC"; // Note: We send "ABC", not "/ABC"
-    
-    std::cout << "Attempting to open: " << file2_path << "/" << file2_name << std::endl;
-    
-    if (client.open_file(file2_name, file2_path)) {
-        std::cout << "File 'test.txt' opened successfully." << std::endl;
-        // Good practice to close it when done
-        client.close_file(file2_name, file2_path);
-    } else {
-        std::cerr << "Failed to open 'test.txt'. (This is normal if the file doesn't exist on the server)." << std::endl;
+    // Write "Hello, world!" at pos 0
+    std::string data1 = "Hello, world!";
+    std::cout << "Writing '" << data1 << "' at position 0..." << std::endl;
+    // Note: The function signature is (filename, data, path, position)
+    if (!client.write_file(filename, data1, path, 0)) {
+        std::cerr << "Failed to write data1." << std::endl;
     }
 
-    std::cout << "\n--- Scenario 2: directory listing ---" << std::endl;
-    client.ls_contents("");
+    // Write "everyone" at pos 7 (to overwrite "world")
+    std::string data2 = "everyone!";
+    std::cout << "Writing '" << data2 << "' at position 7..." << std::endl;
+    if (!client.write_file(filename, data2, path, 7)) { // "Hello, " is 7 chars
+        std::cerr << "Failed to write data2." << std::endl;
+    }
+    // At this point, the local file content should be "Hello, everyone!"
+
+    // Close the file to flush changes
+    std::cout << "Closing file to flush to server..." << std::endl;
+    if (!client.close_file(filename, path)) {
+        std::cerr << "Failed to close file." << std::endl;
+    } else {
+        std::cout << "File flushed to server." << std::endl;
+    }
+
+    // --- Scenario 2: Verification ---
+    std::cout << "\n--- Scenario 2: Re-open and Verify Content ---" << std::endl;
+    
+    std::cout << "Opening '" << filename << "' for verification..." << std::endl;
+    if (!client.open_file(filename, path)) {
+        std::cerr << "Failed to re-open file for verification." << std::endl;
+        return 1;
+    }
+
+    std::cout << "Reading line from file..." << std::endl;
+    std::string mutable_filename = filename; // read_file_line takes non-const ref
+    std::string mutable_path = path;       // read_file_line takes non-const ref
+    auto line_opt = client.read_file_line(mutable_filename, mutable_path);
+
+    if (line_opt) {
+        std::string line = *line_opt;
+        std::cout << "Read: '" << line << "'" << std::endl;
+        
+        std::string expected = "Hello, everyone!";
+        if (line == expected) {
+            std::cout << "SUCCESS: Content is correct!" << std::endl;
+        } else {
+            std::cout << "FAILURE: Expected '" << expected << "'" << std::endl;
+        }
+    } else {
+        std::cerr << "Failed to read line from file." << std::endl;
+    }
+
+    // Clean up
+    std::cout << "Closing file." << std::endl;
+    client.close_file(filename, path);
+
+    // --- Scenario 3: Directory Listing ---
+    std::cout << "\n--- Scenario 3: Listing Root Directory ---" << std::endl;
+    client.ls_contents(""); // List root
+
+    std::cout << "\n--- Scenario 4: Listing New Directory (" << path << ") ---" << std::endl;
+    client.ls_contents(path); // List "test_dir"
 
     std::cout << "\n--- Script finished ---" << std::endl;
-
     return 0;
 }

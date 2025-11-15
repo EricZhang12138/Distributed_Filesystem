@@ -73,7 +73,7 @@ public:
      * @param directory The server-side path.
      * @return true on success, false on failure.
      */
-    bool write_file(std::string& filename, std::string& data, std::string& directory);  
+    bool write_file(const std::string& filename,const std::string& data, const std::string& directory, std::streampos position);  
     // currently write_file is append only because I used std::ios::app and it forces all the writes to append to the file and you can't change the existing content
 
     /**
