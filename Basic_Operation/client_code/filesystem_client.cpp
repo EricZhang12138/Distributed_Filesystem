@@ -22,6 +22,7 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
     }
 }
 
+// Going from a path you want to access to the path in cache on the client
 std::string FileSystemClient::resolve_server_path(const std::string& user_path) {
     std::filesystem::path root(this->server_root_path_);
     std::filesystem::path user(user_path);
@@ -30,6 +31,9 @@ std::string FileSystemClient::resolve_server_path(const std::string& user_path) 
     // we need its relative part to join with our root.
     if (user.is_absolute()) {
         user = user.relative_path();
+    }
+    if (root.is_absolute()){
+        root = root.relative_path();
     }
     
     // The '/' operator handles joining correctly (e.g., "/" + "test" -> "/test")
