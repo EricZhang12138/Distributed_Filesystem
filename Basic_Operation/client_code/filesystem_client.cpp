@@ -7,7 +7,7 @@
 #include <vector> 
 #include <sys/stat.h>
 
-
+ 
 FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stub_(afs_operation::operators::NewStub(channel)){
     afs_operation::InitialiseRequest request;
     request.set_code_to_initialise("I want input/output directory");
@@ -626,8 +626,8 @@ int main() {
 
 
     // Get Attributes
-    auto attributes = client.get_attributes(filename, path);
-    print_attributes("positional_test.txt", attributes);
+    auto attributes = client.get_attributes("test.txt", "/ABC");
+    print_attributes("test.txt", attributes);
 
 
     // Clean up
