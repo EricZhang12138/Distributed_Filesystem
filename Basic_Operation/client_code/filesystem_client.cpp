@@ -78,8 +78,9 @@ std::optional<FileSystemClient::FileAttributes> FileSystemClient::get_attributes
     attrs.ctime = response.ctime();
     attrs.mode = response.mode();
     attrs.nlink = response.nlink();
-    attrs.uid = response.uid();
-    attrs.gid = response.gid();
+    attrs.uid = getuid();
+    attrs.gid = getgid(); // have to change the uid and gid to my local machine's to access them freely
+                          // This approach assumes the client is authentic
 
     cached_attr[file_loca_server] = attrs;
     
