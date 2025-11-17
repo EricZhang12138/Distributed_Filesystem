@@ -47,7 +47,13 @@ std::optional<FileSystemClient::FileAttributes> FileSystemClient::get_attributes
     
     afs_operation::GetAttrRequest request;
     request.set_filename(filename);
-    request.set_directory(resolved_path); // Pass the server-resolved path
+    request.set_directory(resolved_path); // Pass the server-resolved path 
+    
+    std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    auto it = cached_attr.find(file_loca_server);
+    if (it != cached_attr.end()){   // this means file_loca_server exists in the cached_attr already
+        return it -> second;
+    }
 
     afs_operation::GetAttrResponse response;
     grpc::ClientContext context;
@@ -75,6 +81,8 @@ std::optional<FileSystemClient::FileAttributes> FileSystemClient::get_attributes
     attrs.uid = response.uid();
     attrs.gid = response.gid();
 
+    cached_attr[file_loca_server] = attrs;
+    
     return attrs;
 }
 
@@ -368,8 +376,25 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
         cache.erase(file_location); 
         return false;
     }
-
     opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+
+    FileAttributes attr;
+
+    // We must use stat() from <sys/stat.h> to get all POSIX info
+    struct stat s;
+    if (stat(file_location.c_str(), &s) != 0) {
+            std::cerr << "Error: stat() failed for path: " << file_location << std::endl;
+            return false;
+    }
+    attr.size = s.st_size;
+    attr.atime = s.st_atimespec.tv_sec;
+    attr.mtime = s.st_mtimespec.tv_sec;
+    attr.ctime = s.st_ctimespec.tv_sec;
+    attr.mode = s.st_mode;
+    attr.nlink = s.st_nlink;
+
+    cached_attr[resolved_path] = attr;
+
     std::cout << "Successfully created and opened '" << filename << "' for writing." << std::endl;
     return true;
 }

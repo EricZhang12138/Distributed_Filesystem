@@ -22,9 +22,6 @@ private:
         int64_t timestamp;    // The last known timestamp from the server
         std::string filename; // The base name of the file
     };
-
-
-
     /**
      * @brief Holds the file stream handles for an open file.
      */
@@ -36,7 +33,7 @@ private:
     // The gRPC stub for communicating with the server
     std::unique_ptr<afs_operation::operators::Stub> stub_;
     
-    // In-memory cache of file metadata
+    // In-memory cache of file metadata. key is the directory of the file on the client machine (within the cache)
     std::map<std::string, FileInfo> cache;
     
     // Map of locally open file handles
@@ -57,6 +54,10 @@ public:
         uint32_t uid;
         uint32_t gid;
     };
+    // Map of locally cached FileAttributes. key is the directory of the file on the server
+    std::map<std::string, FileAttributes> cached_attr;
+
+
     /**
      * @brief Constructs the client and initializes the connection with the server.
      * @param channel The gRPC channel to use for communication.
