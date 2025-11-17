@@ -23,8 +23,6 @@ message FileResponse {
     int32 update_bit =4;  // update = 1 -> needs to update content on the client otherwise no
 }
 
-
-
 message ListDirectoryRequest{
     string directory =1;
 }
@@ -34,10 +32,28 @@ message ListDirectoryResponse{
 }
 
 
+message GetAttrRequest {
+    string filename = 1;
+    string directory = 2;
+}
+
+message GetAttrResponse {
+    int64 size = 1;         // File size in bytes
+    int64 mtime = 2;        // Last modification time (seconds)
+    uint32 mode = 3;        // File mode (e.g., 0755 | S_IFREG)
+    int64 atime = 4;        // Last access time (seconds)
+    int64 ctime = 5;        // Last status change time (seconds)
+    uint32 nlink = 6;       // Number of hard links
+    uint32 uid = 7;         // User ID
+    uint32 gid = 8;         // Group ID
+}
+
+
 service operators{
     rpc request_dir (InitialiseRequest) returns (InitialiseResponse);
     rpc open (FileRequest) returns (stream FileResponse);
     rpc close (stream FileRequest) returns (FileResponse);
     rpc compare (FileRequest) returns (stream FileResponse);
     rpc ls (ListDirectoryRequest) returns (ListDirectoryResponse);
+    rpc getattr (GetAttrRequest) returns (GetAttrResponse);
 }

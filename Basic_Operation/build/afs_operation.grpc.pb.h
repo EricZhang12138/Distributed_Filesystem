@@ -77,6 +77,13 @@ class operators final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::ListDirectoryResponse>> PrepareAsyncls(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::ListDirectoryResponse>>(PrepareAsynclsRaw(context, request, cq));
     }
+    virtual ::grpc::Status getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::afs_operation::GetAttrResponse* response) = 0;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::GetAttrResponse>> Asyncgetattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::GetAttrResponse>>(AsyncgetattrRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::GetAttrResponse>> PrepareAsyncgetattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::GetAttrResponse>>(PrepareAsyncgetattrRaw(context, request, cq));
+    }
     class async_interface {
      public:
       virtual ~async_interface() {}
@@ -87,6 +94,8 @@ class operators final {
       virtual void compare(::grpc::ClientContext* context, const ::afs_operation::FileRequest* request, ::grpc::ClientReadReactor< ::afs_operation::FileResponse>* reactor) = 0;
       virtual void ls(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest* request, ::afs_operation::ListDirectoryResponse* response, std::function<void(::grpc::Status)>) = 0;
       virtual void ls(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest* request, ::afs_operation::ListDirectoryResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
+      virtual void getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response, std::function<void(::grpc::Status)>) = 0;
+      virtual void getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
     };
     typedef class async_interface experimental_async_interface;
     virtual class async_interface* async() { return nullptr; }
@@ -105,6 +114,8 @@ class operators final {
     virtual ::grpc::ClientAsyncReaderInterface< ::afs_operation::FileResponse>* PrepareAsynccompareRaw(::grpc::ClientContext* context, const ::afs_operation::FileRequest& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::ListDirectoryResponse>* AsynclsRaw(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::ListDirectoryResponse>* PrepareAsynclsRaw(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::GetAttrResponse>* AsyncgetattrRaw(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientAsyncResponseReaderInterface< ::afs_operation::GetAttrResponse>* PrepareAsyncgetattrRaw(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) = 0;
   };
   class Stub final : public StubInterface {
    public:
@@ -150,6 +161,13 @@ class operators final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::afs_operation::ListDirectoryResponse>> PrepareAsyncls(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::afs_operation::ListDirectoryResponse>>(PrepareAsynclsRaw(context, request, cq));
     }
+    ::grpc::Status getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::afs_operation::GetAttrResponse* response) override;
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>> Asyncgetattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>>(AsyncgetattrRaw(context, request, cq));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>> PrepareAsyncgetattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>>(PrepareAsyncgetattrRaw(context, request, cq));
+    }
     class async final :
       public StubInterface::async_interface {
      public:
@@ -160,6 +178,8 @@ class operators final {
       void compare(::grpc::ClientContext* context, const ::afs_operation::FileRequest* request, ::grpc::ClientReadReactor< ::afs_operation::FileResponse>* reactor) override;
       void ls(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest* request, ::afs_operation::ListDirectoryResponse* response, std::function<void(::grpc::Status)>) override;
       void ls(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest* request, ::afs_operation::ListDirectoryResponse* response, ::grpc::ClientUnaryReactor* reactor) override;
+      void getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response, std::function<void(::grpc::Status)>) override;
+      void getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response, ::grpc::ClientUnaryReactor* reactor) override;
      private:
       friend class Stub;
       explicit async(Stub* stub): stub_(stub) { }
@@ -184,11 +204,14 @@ class operators final {
     ::grpc::ClientAsyncReader< ::afs_operation::FileResponse>* PrepareAsynccompareRaw(::grpc::ClientContext* context, const ::afs_operation::FileRequest& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::afs_operation::ListDirectoryResponse>* AsynclsRaw(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::afs_operation::ListDirectoryResponse>* PrepareAsynclsRaw(::grpc::ClientContext* context, const ::afs_operation::ListDirectoryRequest& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>* AsyncgetattrRaw(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>* PrepareAsyncgetattrRaw(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) override;
     const ::grpc::internal::RpcMethod rpcmethod_request_dir_;
     const ::grpc::internal::RpcMethod rpcmethod_open_;
     const ::grpc::internal::RpcMethod rpcmethod_close_;
     const ::grpc::internal::RpcMethod rpcmethod_compare_;
     const ::grpc::internal::RpcMethod rpcmethod_ls_;
+    const ::grpc::internal::RpcMethod rpcmethod_getattr_;
   };
   static std::unique_ptr<Stub> NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options = ::grpc::StubOptions());
 
@@ -201,6 +224,7 @@ class operators final {
     virtual ::grpc::Status close(::grpc::ServerContext* context, ::grpc::ServerReader< ::afs_operation::FileRequest>* reader, ::afs_operation::FileResponse* response);
     virtual ::grpc::Status compare(::grpc::ServerContext* context, const ::afs_operation::FileRequest* request, ::grpc::ServerWriter< ::afs_operation::FileResponse>* writer);
     virtual ::grpc::Status ls(::grpc::ServerContext* context, const ::afs_operation::ListDirectoryRequest* request, ::afs_operation::ListDirectoryResponse* response);
+    virtual ::grpc::Status getattr(::grpc::ServerContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response);
   };
   template <class BaseClass>
   class WithAsyncMethod_request_dir : public BaseClass {
@@ -302,7 +326,27 @@ class operators final {
       ::grpc::Service::RequestAsyncUnary(4, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
-  typedef WithAsyncMethod_request_dir<WithAsyncMethod_open<WithAsyncMethod_close<WithAsyncMethod_compare<WithAsyncMethod_ls<Service > > > > > AsyncService;
+  template <class BaseClass>
+  class WithAsyncMethod_getattr : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithAsyncMethod_getattr() {
+      ::grpc::Service::MarkMethodAsync(5);
+    }
+    ~WithAsyncMethod_getattr() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status getattr(::grpc::ServerContext* /*context*/, const ::afs_operation::GetAttrRequest* /*request*/, ::afs_operation::GetAttrResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void Requestgetattr(::grpc::ServerContext* context, ::afs_operation::GetAttrRequest* request, ::grpc::ServerAsyncResponseWriter< ::afs_operation::GetAttrResponse>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(5, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  typedef WithAsyncMethod_request_dir<WithAsyncMethod_open<WithAsyncMethod_close<WithAsyncMethod_compare<WithAsyncMethod_ls<WithAsyncMethod_getattr<Service > > > > > > AsyncService;
   template <class BaseClass>
   class WithCallbackMethod_request_dir : public BaseClass {
    private:
@@ -423,7 +467,34 @@ class operators final {
     virtual ::grpc::ServerUnaryReactor* ls(
       ::grpc::CallbackServerContext* /*context*/, const ::afs_operation::ListDirectoryRequest* /*request*/, ::afs_operation::ListDirectoryResponse* /*response*/)  { return nullptr; }
   };
-  typedef WithCallbackMethod_request_dir<WithCallbackMethod_open<WithCallbackMethod_close<WithCallbackMethod_compare<WithCallbackMethod_ls<Service > > > > > CallbackService;
+  template <class BaseClass>
+  class WithCallbackMethod_getattr : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithCallbackMethod_getattr() {
+      ::grpc::Service::MarkMethodCallback(5,
+          new ::grpc::internal::CallbackUnaryHandler< ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response) { return this->getattr(context, request, response); }));}
+    void SetMessageAllocatorFor_getattr(
+        ::grpc::MessageAllocator< ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse>* allocator) {
+      ::grpc::internal::MethodHandler* const handler = ::grpc::Service::GetHandler(5);
+      static_cast<::grpc::internal::CallbackUnaryHandler< ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse>*>(handler)
+              ->SetMessageAllocator(allocator);
+    }
+    ~WithCallbackMethod_getattr() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status getattr(::grpc::ServerContext* /*context*/, const ::afs_operation::GetAttrRequest* /*request*/, ::afs_operation::GetAttrResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* getattr(
+      ::grpc::CallbackServerContext* /*context*/, const ::afs_operation::GetAttrRequest* /*request*/, ::afs_operation::GetAttrResponse* /*response*/)  { return nullptr; }
+  };
+  typedef WithCallbackMethod_request_dir<WithCallbackMethod_open<WithCallbackMethod_close<WithCallbackMethod_compare<WithCallbackMethod_ls<WithCallbackMethod_getattr<Service > > > > > > CallbackService;
   typedef CallbackService ExperimentalCallbackService;
   template <class BaseClass>
   class WithGenericMethod_request_dir : public BaseClass {
@@ -506,6 +577,23 @@ class operators final {
     }
     // disable synchronous version of this method
     ::grpc::Status ls(::grpc::ServerContext* /*context*/, const ::afs_operation::ListDirectoryRequest* /*request*/, ::afs_operation::ListDirectoryResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+  };
+  template <class BaseClass>
+  class WithGenericMethod_getattr : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithGenericMethod_getattr() {
+      ::grpc::Service::MarkMethodGeneric(5);
+    }
+    ~WithGenericMethod_getattr() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status getattr(::grpc::ServerContext* /*context*/, const ::afs_operation::GetAttrRequest* /*request*/, ::afs_operation::GetAttrResponse* /*response*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -608,6 +696,26 @@ class operators final {
     }
     void Requestls(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
       ::grpc::Service::RequestAsyncUnary(4, context, request, response, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
+  class WithRawMethod_getattr : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawMethod_getattr() {
+      ::grpc::Service::MarkMethodRaw(5);
+    }
+    ~WithRawMethod_getattr() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status getattr(::grpc::ServerContext* /*context*/, const ::afs_operation::GetAttrRequest* /*request*/, ::afs_operation::GetAttrResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void Requestgetattr(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncResponseWriter< ::grpc::ByteBuffer>* response, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncUnary(5, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
   template <class BaseClass>
@@ -721,6 +829,28 @@ class operators final {
       ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
   };
   template <class BaseClass>
+  class WithRawCallbackMethod_getattr : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawCallbackMethod_getattr() {
+      ::grpc::Service::MarkMethodRawCallback(5,
+          new ::grpc::internal::CallbackUnaryHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::grpc::ByteBuffer* request, ::grpc::ByteBuffer* response) { return this->getattr(context, request, response); }));
+    }
+    ~WithRawCallbackMethod_getattr() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status getattr(::grpc::ServerContext* /*context*/, const ::afs_operation::GetAttrRequest* /*request*/, ::afs_operation::GetAttrResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerUnaryReactor* getattr(
+      ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
+  };
+  template <class BaseClass>
   class WithStreamedUnaryMethod_request_dir : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
@@ -774,7 +904,34 @@ class operators final {
     // replace default version of method with streamed unary
     virtual ::grpc::Status Streamedls(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::afs_operation::ListDirectoryRequest,::afs_operation::ListDirectoryResponse>* server_unary_streamer) = 0;
   };
-  typedef WithStreamedUnaryMethod_request_dir<WithStreamedUnaryMethod_ls<Service > > StreamedUnaryService;
+  template <class BaseClass>
+  class WithStreamedUnaryMethod_getattr : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithStreamedUnaryMethod_getattr() {
+      ::grpc::Service::MarkMethodStreamed(5,
+        new ::grpc::internal::StreamedUnaryHandler<
+          ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse>(
+            [this](::grpc::ServerContext* context,
+                   ::grpc::ServerUnaryStreamer<
+                     ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse>* streamer) {
+                       return this->Streamedgetattr(context,
+                         streamer);
+                  }));
+    }
+    ~WithStreamedUnaryMethod_getattr() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable regular version of this method
+    ::grpc::Status getattr(::grpc::ServerContext* /*context*/, const ::afs_operation::GetAttrRequest* /*request*/, ::afs_operation::GetAttrResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    // replace default version of method with streamed unary
+    virtual ::grpc::Status Streamedgetattr(::grpc::ServerContext* context, ::grpc::ServerUnaryStreamer< ::afs_operation::GetAttrRequest,::afs_operation::GetAttrResponse>* server_unary_streamer) = 0;
+  };
+  typedef WithStreamedUnaryMethod_request_dir<WithStreamedUnaryMethod_ls<WithStreamedUnaryMethod_getattr<Service > > > StreamedUnaryService;
   template <class BaseClass>
   class WithSplitStreamingMethod_open : public BaseClass {
    private:
@@ -830,7 +987,7 @@ class operators final {
     virtual ::grpc::Status Streamedcompare(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::afs_operation::FileRequest,::afs_operation::FileResponse>* server_split_streamer) = 0;
   };
   typedef WithSplitStreamingMethod_open<WithSplitStreamingMethod_compare<Service > > SplitStreamedService;
-  typedef WithStreamedUnaryMethod_request_dir<WithSplitStreamingMethod_open<WithSplitStreamingMethod_compare<WithStreamedUnaryMethod_ls<Service > > > > StreamedService;
+  typedef WithStreamedUnaryMethod_request_dir<WithSplitStreamingMethod_open<WithSplitStreamingMethod_compare<WithStreamedUnaryMethod_ls<WithStreamedUnaryMethod_getattr<Service > > > > > StreamedService;
 };
 
 }  // namespace afs_operation

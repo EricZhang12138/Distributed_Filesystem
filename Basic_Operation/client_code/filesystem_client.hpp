@@ -9,6 +9,8 @@
 #include "afs_operation.grpc.pb.h"
 #include "afs_operation.pb.h"
 
+
+
 class FileSystemClient {
 
 private:
@@ -20,6 +22,8 @@ private:
         int64_t timestamp;    // The last known timestamp from the server
         std::string filename; // The base name of the file
     };
+
+
 
     /**
      * @brief Holds the file stream handles for an open file.
@@ -43,6 +47,16 @@ private:
     std::string resolve_server_path(const std::string& user_path);
 
 public:
+    struct FileAttributes {
+        int64_t size;
+        int64_t atime;
+        int64_t mtime;
+        int64_t ctime;
+        uint32_t mode;
+        uint32_t nlink;
+        uint32_t uid;
+        uint32_t gid;
+    };
     /**
      * @brief Constructs the client and initializes the connection with the server.
      * @param channel The gRPC channel to use for communication.
@@ -94,4 +108,7 @@ public:
 
 
     std::optional<std::map<std::string, std::string>> ls_contents(const std::string& directory); // list the contents in the specified directory
+    
+    std::optional<FileSystemClient::FileAttributes> get_attributes(const std::string& filename, const std::string& path);
+
 };

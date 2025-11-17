@@ -3,6 +3,63 @@
 #include <fstream>
 #include <sstream>
 #include <chrono> // For timestamp logic
+#include <sys/stat.h> // For getting the stats 
+
+
+
+
+// REPLACE the entire getattr function with this:
+grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operation::GetAttrRequest* request, afs_operation::GetAttrResponse* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path;
+
+    // Handle FUSE's request for root "/"
+    // Your FUSE code will split "/" into (dir="/", filename="") or similar.
+    // We'll reconstruct the intended path on the server.
+    if (directory.empty() || directory == "/") {
+        if (filename.empty() || filename == ".") {
+            path = root_dir; // Get stats for the root directory
+        } else {
+            // Re-join filename to root, avoiding double-slash
+            path = root_dir + (root_dir.back() == '/' ? "" : "/") + filename;
+        }
+    } else {
+        path = directory + "/" + filename;
+    }
+    
+    std::cout << "GetAttr request for resolved path: " << path << std::endl;
+
+    try {
+        // We must use stat() from <sys/stat.h> to get all POSIX info
+        struct stat s;
+        if (stat(path.c_str(), &s) != 0) {
+             // This will correctly return NOT_FOUND, which FUSE translates to -ENOENT
+             std::cerr << "Error: stat() failed for path: " << path << std::endl;
+             return grpc::Status(grpc::StatusCode::NOT_FOUND, "stat() system call failed or file not found");
+        }
+        
+        // Populate the response
+        response->set_size(s.st_size);   // file size in bytes
+        response->set_mode(s.st_mode);      // This includes file type (S_IFREG/S_IFDIR) AND permissions
+        response->set_nlink(s.st_nlink);      // number of hard links to the file
+        response->set_uid(s.st_uid);       // user id and group id of the file's owner
+        response->set_gid(s.st_gid);
+
+        // Convert timespec to int64 (seconds)
+        response->set_atime(s.st_atimespec.tv_sec);       // access time, last time read
+        response->set_mtime(s.st_mtimespec.tv_sec);       // modification time, last time write
+        response->set_ctime(s.st_ctimespec.tv_sec);       // last time metadata like permissions was changed 
+
+        // Log mode in octal, which is standard for permissions
+        std::cout << "Attributes sent (mode): " << std::oct << s.st_mode << std::dec << std::endl;
+        return grpc::Status::OK;
+
+    } catch (const std::exception& e) { // Catch generic exceptions too
+        std::cerr << "Exception in getattr: " << e.what() << std::endl;
+        return grpc::Status(grpc::StatusCode::INTERNAL, "An exception occurred");
+    }
+}
 
 
 grpc::Status FileSystem::request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) {

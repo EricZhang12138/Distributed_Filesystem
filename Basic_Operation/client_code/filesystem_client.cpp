@@ -5,6 +5,8 @@
 #include <thread>
 #include <filesystem>
 #include <vector> 
+#include <sys/stat.h>
+
 
 FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stub_(afs_operation::operators::NewStub(channel)){
     afs_operation::InitialiseRequest request;
@@ -32,13 +34,48 @@ std::string FileSystemClient::resolve_server_path(const std::string& user_path) 
     if (user.is_absolute()) {
         user = user.relative_path();
     }
-    if (root.is_absolute()){
-        root = root.relative_path();
-    }
-    
+
     // The '/' operator handles joining correctly (e.g., "/" + "test" -> "/test")
     std::filesystem::path full_path = root / user;
     return full_path.generic_string(); // Use generic_string for consistent '/' separators
+}
+
+std::optional<FileSystemClient::FileAttributes> FileSystemClient::get_attributes(const std::string& filename, const std::string& path) {
+    // Note: resolve_server_path is still correct, as it gives the gRPC
+    // server the "directory" string it expects (e.g., /path/to/root/test_dir)
+    std::string resolved_path = resolve_server_path(path);
+    
+    afs_operation::GetAttrRequest request;
+    request.set_filename(filename);
+    request.set_directory(resolved_path); // Pass the server-resolved path
+
+    afs_operation::GetAttrResponse response;
+    grpc::ClientContext context;
+
+    grpc::Status status = stub_->getattr(&context, request, &response);
+
+    if (!status.ok()) {
+        // Don't log an error here if it's just "NOT_FOUND",
+        // For example when we do ls, the OS asks the filesystem whether it has .bash_profile, .gitconfig etc.
+        // If they are not found, it is normal and we don't want errors
+        // as FUSE will check for non-existent files all the time.
+        if (status.error_code() != grpc::StatusCode::NOT_FOUND) {
+            std::cerr << "GetAttributes RPC failed: " << status.error_message() << std::endl;
+        }
+        return std::nullopt;
+    }
+
+    FileAttributes attrs;
+    attrs.size = response.size();
+    attrs.atime = response.atime();
+    attrs.mtime = response.mtime();
+    attrs.ctime = response.ctime();
+    attrs.mode = response.mode();
+    attrs.nlink = response.nlink();
+    attrs.uid = response.uid();
+    attrs.gid = response.gid();
+
+    return attrs;
 }
 
 
@@ -47,7 +84,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
     std::string resolved_path = resolve_server_path(path);
     std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
 
-    std::string cache_dir = "./tmp/cache/" + resolved_path; // Use resolved_path
+    std::string cache_dir = "./tmp/cache" + resolved_path; // Use resolved_path
     std::string file_location = cache_dir + "/" + filename;
     
     // Case 1: File is NOT in the local cache
@@ -218,7 +255,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 bool FileSystemClient::read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer){
     
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
+    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
 
     if (cache.find(file_location)==cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
@@ -259,7 +296,7 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
 bool FileSystemClient::write_file(const std::string& filename, const std::string& data, const std::string& directory, std::streampos position){
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
+    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
 
     if (cache.find(file_location)==cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
@@ -298,8 +335,8 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
 bool FileSystemClient::create_file(const std::string& filename, const std::string& path) {
 
     std::string resolved_path = resolve_server_path(path);
-    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
-    std::string cache_dir = "./tmp/cache/" + resolved_path;
+    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
+    std::string cache_dir = "./tmp/cache" + resolved_path;
 
     if (cache.count(file_location) || opened_files.count(file_location)) {
         std::cerr << "Error: File '" << filename << "' already exists." << std::endl;
@@ -340,7 +377,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
 
 bool FileSystemClient::close_file(const std::string& filename, const std::string& directory) {
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache/" + resolved_path + "/" + filename;
+    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
     
     auto opened_file_it = opened_files.find(file_location);
     if (opened_file_it == opened_files.end()) {
@@ -465,6 +502,36 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
 }
 
 
+
+
+
+// --- Helper function for testing ---
+// This function neatly prints the attributes returned from your get_attributes call
+void print_attributes(const std::string& name, std::optional<FileSystemClient::FileAttributes> attrs_opt) {
+    if (!attrs_opt) {
+        std::cout << "  Failed to get attributes for '" << name << "' (File not found, this is OK)" << std::endl;
+        return;
+    }
+
+    auto attrs = *attrs_opt;
+    std::cout << "  Attributes for '" << name << "':" << std::endl;
+    
+    // Print mode in octal (e.g., 0755) and check if it's a file or directory
+    std::cout << "    Mode:  0" << std::oct << attrs.mode << std::dec << " (";
+    if (S_ISDIR(attrs.mode)) std::cout << "Directory";
+    else if (S_ISREG(attrs.mode)) std::cout << "File";
+    else std::cout << "Other";
+    std::cout << ")" << std::endl;
+
+    std::cout << "    Size:  " << attrs.size << " bytes" << std::endl;
+    std::cout << "    Links: " << attrs.nlink << std::endl;
+    std::cout << "    Owner: uid=" << attrs.uid << ", gid=" << attrs.gid << std::endl;
+    std::cout << "    MTime: " << attrs.mtime << " (Last Modification Time)" << std::endl;
+    std::cout << "    ATime: " << attrs.atime << " (Last Access Time)" << std::endl;
+    std::cout << "    CTime: " << attrs.ctime << " (Last Status Change Time)" << std::endl;
+}
+
+
 int main() {
     // 1. Setup connection
     std::string address = "localhost:50051";
@@ -555,6 +622,13 @@ int main() {
     } else {
         std::cerr << "Failed to read from file." << std::endl;
     }
+
+
+
+    // Get Attributes
+    auto attributes = client.get_attributes(filename, path);
+    print_attributes("positional_test.txt", attributes);
+
 
     // Clean up
     std::cout << "Closing file." << std::endl;

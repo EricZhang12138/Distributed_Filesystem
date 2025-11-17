@@ -28,6 +28,7 @@ static const char* operators_method_names[] = {
   "/afs_operation.operators/close",
   "/afs_operation.operators/compare",
   "/afs_operation.operators/ls",
+  "/afs_operation.operators/getattr",
 };
 
 std::unique_ptr< operators::Stub> operators::NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options) {
@@ -42,6 +43,7 @@ operators::Stub::Stub(const std::shared_ptr< ::grpc::ChannelInterface>& channel,
   , rpcmethod_close_(operators_method_names[2], options.suffix_for_stats(),::grpc::internal::RpcMethod::CLIENT_STREAMING, channel)
   , rpcmethod_compare_(operators_method_names[3], options.suffix_for_stats(),::grpc::internal::RpcMethod::SERVER_STREAMING, channel)
   , rpcmethod_ls_(operators_method_names[4], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
+  , rpcmethod_getattr_(operators_method_names[5], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   {}
 
 ::grpc::Status operators::Stub::request_dir(::grpc::ClientContext* context, const ::afs_operation::InitialiseRequest& request, ::afs_operation::InitialiseResponse* response) {
@@ -138,6 +140,29 @@ void operators::Stub::async::ls(::grpc::ClientContext* context, const ::afs_oper
   return result;
 }
 
+::grpc::Status operators::Stub::getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::afs_operation::GetAttrResponse* response) {
+  return ::grpc::internal::BlockingUnaryCall< ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), rpcmethod_getattr_, context, request, response);
+}
+
+void operators::Stub::async::getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response, std::function<void(::grpc::Status)> f) {
+  ::grpc::internal::CallbackUnaryCall< ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_getattr_, context, request, response, std::move(f));
+}
+
+void operators::Stub::async::getattr(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response, ::grpc::ClientUnaryReactor* reactor) {
+  ::grpc::internal::ClientCallbackUnaryFactory::Create< ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(stub_->channel_.get(), stub_->rpcmethod_getattr_, context, request, response, reactor);
+}
+
+::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>* operators::Stub::PrepareAsyncgetattrRaw(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncResponseReaderHelper::Create< ::afs_operation::GetAttrResponse, ::afs_operation::GetAttrRequest, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(channel_.get(), cq, rpcmethod_getattr_, context, request);
+}
+
+::grpc::ClientAsyncResponseReader< ::afs_operation::GetAttrResponse>* operators::Stub::AsyncgetattrRaw(::grpc::ClientContext* context, const ::afs_operation::GetAttrRequest& request, ::grpc::CompletionQueue* cq) {
+  auto* result =
+    this->PrepareAsyncgetattrRaw(context, request, cq);
+  result->StartCall();
+  return result;
+}
+
 operators::Service::Service() {
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       operators_method_names[0],
@@ -189,6 +214,16 @@ operators::Service::Service() {
              ::afs_operation::ListDirectoryResponse* resp) {
                return service->ls(ctx, req, resp);
              }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      operators_method_names[5],
+      ::grpc::internal::RpcMethod::NORMAL_RPC,
+      new ::grpc::internal::RpcMethodHandler< operators::Service, ::afs_operation::GetAttrRequest, ::afs_operation::GetAttrResponse, ::grpc::protobuf::MessageLite, ::grpc::protobuf::MessageLite>(
+          [](operators::Service* service,
+             ::grpc::ServerContext* ctx,
+             const ::afs_operation::GetAttrRequest* req,
+             ::afs_operation::GetAttrResponse* resp) {
+               return service->getattr(ctx, req, resp);
+             }, this)));
 }
 
 operators::Service::~Service() {
@@ -223,6 +258,13 @@ operators::Service::~Service() {
 }
 
 ::grpc::Status operators::Service::ls(::grpc::ServerContext* context, const ::afs_operation::ListDirectoryRequest* request, ::afs_operation::ListDirectoryResponse* response) {
+  (void) context;
+  (void) request;
+  (void) response;
+  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+}
+
+::grpc::Status operators::Service::getattr(::grpc::ServerContext* context, const ::afs_operation::GetAttrRequest* request, ::afs_operation::GetAttrResponse* response) {
   (void) context;
   (void) request;
   (void) response;
