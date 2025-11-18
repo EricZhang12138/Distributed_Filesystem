@@ -6,7 +6,7 @@
 #include <sys/stat.h> // For getting the stats 
 
 
-// Add this helper at the top of filesystem_server.cpp or as a private method
+
 int64_t get_file_timestamp(const std::string& path) {
     struct stat s;
     if (stat(path.c_str(), &s) != 0) {
@@ -57,10 +57,10 @@ grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operati
         response->set_uid(s.st_uid);       // user id and group id of the file's owner
         response->set_gid(s.st_gid);
 
-        // Convert timespec to int64 (seconds)
-        response->set_atime(s.st_atimespec.tv_sec);       // access time, last time read
-        response->set_mtime(s.st_mtimespec.tv_sec);       // modification time, last time write
-        response->set_ctime(s.st_ctimespec.tv_sec);       // last time metadata like permissions was changed 
+        int64_t precise_time = get_file_timestamp(path);
+        response->set_mtime(precise_time);
+        response->set_atime(precise_time); // Or create a similar helper for atime if needed
+        response->set_ctime(precise_time);     
 
         // Log mode in octal, which is standard for permissions
         std::cout << "Attributes sent (mode): " << std::oct << s.st_mode << std::dec << std::endl;

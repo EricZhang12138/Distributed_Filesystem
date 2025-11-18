@@ -349,10 +349,11 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
                     uintmax_t new_size = std::filesystem::file_size(file_location);
                     attr_it->second.size = static_cast<int64_t>(new_size);
 
-                    // Update Times: Set mtime (modified) and ctime (changed) to NOW
-                    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                    attr_it->second.mtime = static_cast<int64_t>(now);
-                    attr_it->second.ctime = static_cast<int64_t>(now);
+                    // Get current time in nanoseconds
+                    auto now = std::chrono::system_clock::now();
+                    auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+
+                    attr_it->second.mtime = static_cast<int64_t>(now_ns);
                     
                     // We do not change uid/gid here, preserving the "local machine" spoofing 
                     // I set in get_attributes.
@@ -527,13 +528,13 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
 
         // 3. Update FUSE attributes (Convert to Seconds for the OS)
         // integer division removes the extra zeros
-        int64_t server_seconds = server_nanos / 1000000000;   // we assume it is running on Linux/macOS
+        
         std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
         auto attr_it = cached_attr.find(file_loca_server);
         if (attr_it != cached_attr.end()) {
-            attr_it->second.mtime = server_seconds; // Now 'ls -l' shows the correct time!
-            attr_it->second.ctime = server_seconds;
+            attr_it->second.mtime = server_nanos; // Now 'ls -l' shows the correct time!
+            attr_it->second.ctime = server_nanos;
             
             // Also update the size, because you just wrote data!
             try {
