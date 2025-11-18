@@ -41,7 +41,7 @@ private:
 
     std::string server_root_path_;
 
-    std::string resolve_server_path(const std::string& user_path);
+    
 
 public:
     struct FileAttributes {
@@ -63,6 +63,8 @@ public:
      * @param channel The gRPC channel to use for communication.
      */
     FileSystemClient(std::shared_ptr<grpc::Channel> channel);
+
+    std::string resolve_server_path(const std::string& user_path);
 
     /**
      * @brief Opens a file, downloading it from the server if not cached or

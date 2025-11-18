@@ -7,6 +7,7 @@
 #include <vector> 
 #include <sys/stat.h>
 
+
  
 FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stub_(afs_operation::operators::NewStub(channel)){
     afs_operation::InitialiseRequest request;
@@ -81,7 +82,7 @@ std::optional<FileSystemClient::FileAttributes> FileSystemClient::get_attributes
     attrs.uid = getuid();
     attrs.gid = getgid(); // have to change the uid and gid to my local machine's to access them freely
                           // This approach assumes the client is authentic
-
+    
     cached_attr[file_loca_server] = attrs;
     
     return attrs;
@@ -307,7 +308,7 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
 
-    if (cache.find(file_location)==cache.end()){
+    if (cache.find(file_location) == cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
         return false;
     } else {
@@ -320,26 +321,55 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
 
             file_stream.seekp(position);
             if (file_stream.fail()){
-                std::cerr << "Error: Failed to seek to position " << position << "in " <<filename<< std::endl; 
-                file_stream.clear(); //clear the fail bit
+                std::cerr << "Error: Failed to seek to position " << position << " in " << filename << std::endl; 
+                file_stream.clear(); // clear the fail bit
                 return false;
             }
 
-            file_stream.write(data.data(), data.size());  // .data() and .size() are all for strings
-            // the file_stream << data is for formatted string only and will stop writing as soon as it hits a null
+            file_stream.write(data.data(), data.size());
 
             if (file_stream.fail()) {
                 std::cerr << "Error: Failed to write data to " << filename << std::endl;
                 return false;
             }
             
+            // 1. Mark the file content as changed for eventual upload
             cache[file_location].is_changed = true;
+
+            // Update the cached_attr to reflect changes immediately
+
+            // Reconstruct the key exactly how get_attributes does it
+            std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+            
+            auto attr_it = cached_attr.find(file_loca_server);
+            if (attr_it != cached_attr.end()) {
+                try {
+                    // Update Size: Get the actual size of the local file on disk
+                    // This handles both overwrites (size same) and appends (size grows) automatically
+                    uintmax_t new_size = std::filesystem::file_size(file_location);
+                    attr_it->second.size = static_cast<int64_t>(new_size);
+
+                    // Update Times: Set mtime (modified) and ctime (changed) to NOW
+                    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                    attr_it->second.mtime = static_cast<int64_t>(now);
+                    attr_it->second.ctime = static_cast<int64_t>(now);
+                    
+                    // We do not change uid/gid here, preserving the "local machine" spoofing 
+                    // I set in get_attributes.
+
+                    std::cout << "Updated cached attributes for " << filename << ": Size=" << new_size << std::endl;
+
+                } catch (const std::filesystem::filesystem_error& e) {
+                    std::cerr << "Warning: Failed to update cached attributes size: " << e.what() << std::endl;
+                    // We don't return false here because the write physically succeeded
+                }
+            }
+
             std::cout << "Successfully wrote to " << filename << " and marked as changed." << std::endl;
             return true;
         }
     } 
 }
-
 
 bool FileSystemClient::create_file(const std::string& filename, const std::string& path) {
 
@@ -380,7 +410,6 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
 
     FileAttributes attr;
-
     // We must use stat() from <sys/stat.h> to get all POSIX info
     struct stat s;
     if (stat(file_location.c_str(), &s) != 0) {
@@ -393,8 +422,11 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     attr.ctime = s.st_ctimespec.tv_sec;
     attr.mode = s.st_mode;
     attr.nlink = s.st_nlink;
+    attr.uid = getuid();
+    attr.gid = getgid();
 
-    cached_attr[resolved_path] = attr;
+    std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    cached_attr[file_loca_server] = attr;
 
     std::cout << "Successfully created and opened '" << filename << "' for writing." << std::endl;
     return true;
@@ -469,7 +501,6 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
                     break;
                 }
             }
-
             writer->WritesDone();
             status = writer->Finish();
             num_of_tries ++;
@@ -487,8 +518,30 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
             return false; 
         }
 
-        cache_it->second.is_changed = false;
-        cache_it->second.timestamp = response.timestamp();
+
+        // 1. Get the authoritative time from the server (e.g., 1710000000000000000 ns)
+        int64_t server_nanos = response.timestamp();
+
+        // 2. Update internal cache for 'compare' logic (Keep precision!)
+        cache_it->second.timestamp = server_nanos; 
+
+        // 3. Update FUSE attributes (Convert to Seconds for the OS)
+        // integer division removes the extra zeros
+        int64_t server_seconds = server_nanos / 1000000000;   // we assume it is running on Linux/macOS
+        std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+
+        auto attr_it = cached_attr.find(file_loca_server);
+        if (attr_it != cached_attr.end()) {
+            attr_it->second.mtime = server_seconds; // Now 'ls -l' shows the correct time!
+            attr_it->second.ctime = server_seconds;
+            
+            // Also update the size, because you just wrote data!
+            try {
+                attr_it->second.size = std::filesystem::file_size(file_location);
+            } catch (...) {}
+        }
+
+
         std::cout << "File flushed successfully." << std::endl;
     
     } else {
@@ -530,7 +583,127 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
 
 
 
+// --- NEW: Consistency Checker Function ---
+// This simulates what the FUSE kernel does to verify if the "metadata" (RAM) 
+// matches the "data" (Disk)
+bool verify_metadata_consistency(FileSystemClient& client, const std::string& filename, const std::string& directory) {
+    // 1. Reconstruct the cache key (Simulation of what FUSE does)
+    // Note: This simple concatenation assumes 'directory' matches the server path structure exactly
+    // If directory has trailing slash or not, we handle it
+    std::string cache_key = client.resolve_server_path(directory) + (directory.back() == '/' ? "" : "/") + filename;
 
+    // 2. Check FUSE Metadata Cache (cached_attr)
+    auto attr_it = client.cached_attr.find(cache_key);
+    if (attr_it == client.cached_attr.end()) {
+        std::cerr << "[Consistency Check] FAIL: File '" << filename << "' is missing from cached_attr." << std::endl;
+        return false;
+    }
+    const auto& attr = attr_it->second;
+
+    // 3. Check Physical Disk Cache
+    std::string local_path = "./tmp/cache" + cache_key;
+    struct stat local_stat;
+    if (stat(local_path.c_str(), &local_stat) != 0) {
+        std::cerr << "[Consistency Check] FAIL: Physical file missing at " << local_path << std::endl;
+        return false;
+    }
+
+    // 4. Verify SIZE Consistency (Most Critical)
+    // If these differ, FUSE reads will be truncated or garbage.
+    if (attr.size != local_stat.st_size) {
+        std::cerr << "[Consistency Check] FAIL: Size Mismatch!" << std::endl;
+        std::cerr << "  cached_attr (Logical): " << attr.size << " bytes" << std::endl;
+        std::cerr << "  physical (Actual):     " << local_stat.st_size << " bytes" << std::endl;
+        return false;
+    }
+
+    // 5. Verify TIME Validity
+    // We ensure mtime is valid (non-zero).
+    // Note: We do NOT strictly compare attr.mtime vs local_stat.mtime because 
+    // attr.mtime is "Server Time" and local_stat.mtime is "Local Write Time".
+    // They are allowed to differ slightly, but neither should be 0.
+    if (attr.mtime == 0) {
+        std::cerr << "[Consistency Check] FAIL: MTime is 0 (Invalid)." << std::endl;
+        return false;
+    }
+
+    std::cout << "[Consistency Check] PASS: Metadata consistent. Size=" << attr.size << ", Time=" << attr.mtime << std::endl;
+    return true;
+}
+
+
+int main() {
+    // 1. Setup Connection
+    std::string address = "localhost:50051";
+    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(
+        address,
+        grpc::InsecureChannelCredentials()
+    );
+    FileSystemClient client(channel);
+    std::cout << ">>> CLIENT STARTED <<<\n" << std::endl;
+
+    std::string filename = "consistency_check.txt";
+    std::string dir = "/test_consistency"; 
+
+    // =================================================================================
+    // STEP 1: CREATE & WRITE
+    // =================================================================================
+    std::cout << "--- STEP 1: Create & Write Local ---" << std::endl;
+    if (!client.create_file(filename, dir)) {
+        client.open_file(filename, dir); // Recover if exists
+    }
+    
+    std::string data = "Checking metadata integrity is fun.";
+    client.write_file(filename, data, dir, 0);
+
+    // VERIFICATION 1:
+    // Metadata should match the 35 bytes we just wrote
+    if (!verify_metadata_consistency(client, filename, dir)) {
+        std::cerr << "!!! TEST FAILED AT STEP 1 !!!" << std::endl;
+        return 1;
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+
+
+    // =================================================================================
+    // STEP 2: CLOSE (SYNC)
+    // =================================================================================
+    std::cout << "\n--- STEP 2: Close (Flush to Server) ---" << std::endl;
+    client.close_file(filename, dir);
+    
+    // VERIFICATION 2:
+    // Metadata should STILL match 35 bytes.
+    // Timestamp should now be Server Time (we can't verify value easily here, but we verify it's valid)
+    if (!verify_metadata_consistency(client, filename, dir)) {
+        std::cerr << "!!! TEST FAILED AT STEP 2 !!!" << std::endl;
+        return 1;
+    }
+
+    // =================================================================================
+    // STEP 3: RE-OPEN
+    // =================================================================================
+    std::cout << "\n--- STEP 3: Re-Open (Check Staleness) ---" << std::endl;
+    // Sleep to force local time to move forward, ensuring strict timestamp checks are working
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    
+    client.open_file(filename, dir);
+    
+    // VERIFICATION 3:
+    // Metadata should still be consistent after the open logic runs
+    if (!verify_metadata_consistency(client, filename, dir)) {
+        std::cerr << "!!! TEST FAILED AT STEP 3 !!!" << std::endl;
+        return 1;
+    }
+
+    std::cout << "\n>>> ALL SYSTEMS GO: METADATA IS CONSISTENT <<<" << std::endl;
+    return 0;
+}
+
+
+
+
+/*
 // --- Helper function for testing ---
 // This function neatly prints the attributes returned from your get_attributes call
 void print_attributes(const std::string& name, std::optional<FileSystemClient::FileAttributes> attrs_opt) {
@@ -669,4 +842,4 @@ int main() {
 
     std::cout << "\n--- Script finished ---" << std::endl;
     return 0;
-}
+}*/
