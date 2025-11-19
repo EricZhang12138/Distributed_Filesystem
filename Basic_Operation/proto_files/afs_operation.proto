@@ -39,10 +39,10 @@ message GetAttrRequest {
 
 message GetAttrResponse {
     int64 size = 1;         // File size in bytes
-    int64 mtime = 2;        // Last modification time (seconds)
+    int64 mtime = 2;        // Last modification time (nanoseconds)
     uint32 mode = 3;        // File mode (e.g., 0755 | S_IFREG)
-    int64 atime = 4;        // Last access time (seconds)
-    int64 ctime = 5;        // Last status change time (seconds)
+    int64 atime = 4;        // Last access time (nanoseconds)
+    int64 ctime = 5;        // Last status change time (nanoseconds)
     uint32 nlink = 6;       // Number of hard links
     uint32 uid = 7;         // User ID
     uint32 gid = 8;         // Group ID

@@ -5,8 +5,6 @@
 #include <errno.h>
 #include <iostream>
 #include <memory>
-
-
 #include "filesystem_client.hpp"
 
 static FileSystemClient* get_client(){
@@ -14,6 +12,7 @@ static FileSystemClient* get_client(){
     // static type is compile time check and it tells the compiler that "I know 
     //more than you and I am sure variable of type A can be treated as a variable of type B"
 }
+
 
 // 1. Read Directory
 static int afs_readdir(const char* path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi){
@@ -36,7 +35,7 @@ static int afs_readdir(const char* path, void *buf, fuse_fill_dir_t filler, off_
 
 // 2. Open File
 static int afs_open(const char* path, struct fuse_file_info *fi){
-    (void*) fi; 
+    (void*) fi;
     std::filesystem::path s_path(path);
     std::string filename = s_path.filename().string();
     std::string path = s_path.parent_path().string();
@@ -78,7 +77,7 @@ static int afs_write(const char* path, const char *buf, size_t size, off_t offse
 
 // 5. Release File (close)
 
-static int fs_release(const char *path, struct fuse_file_info *fi) {
+static int afs_release(const char *path, struct fuse_file_info *fi) {
     std::filesystem::path fs_path(path);
     std::string dir = fs_path.parent_path().string();
     std::string filename = fs_path.filename().string();
@@ -90,7 +89,7 @@ static int fs_release(const char *path, struct fuse_file_info *fi) {
 
 
 // 6. Create File (create)
-static int fs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
+static int afs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
     (void) mode; (void) fi; // Unused
     
     std::filesystem::path fs_path(path);
@@ -103,4 +102,73 @@ static int fs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
     }
     return 0;
 }
+
+
+static int afs_getattr(const char *path, struct stat *stbuf){
+    memset(stbuf, 0, sizeof(struct stat));
+    
+    // Handle Root Directory Special Case
+    if (strcmp(path, "/") == 0) {
+        stbuf->st_mode = S_IFDIR | 0755;   // owner permission: 7, group permission: 5, other permission: 5 
+        stbuf->st_nlink = 2;
+        return 0;
+    }
+    
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    
+    if (dir.empty() || dir =="/") dir = "";
+    
+    // call existing client logic
+    auto attrs_opt = get_client()->get_attributes(filename, dir);
+    
+    if (!attrs_opt){
+        return -ENOENT;
+    }
+    
+    auto attrs = *attrs_opt;
+    
+    stbuf->st_mode = attrs.mode;
+    stbuf->st_nlink = attrs.nlink;
+    stbuf->st_size = attrs.size;
+    stbuf->st_uid = attrs.uid;
+    stbuf->st_gid = attrs.gid;
+    
+    // Convert int64 nanoseconds back to timespec (seconds and nanoseconds)
+    // Note: This depends on your OS. Linux uses st_mtim, macOS uses st_mtimespec
+    #ifdef __APPLE__
+        stbuf->st_mtimespec.tv_sec = attrs.mtime / 1000000000;
+        stbuf->st_mtimespec.tv_nsec = attrs.mtime % 1000000000;
+        
+        stbuf->st_atimespec.tv_sec = attrs.atime / 1000000000;
+        stbuf->st_atimespec.tv_nsec = attrs.atime % 1000000000;
+        
+        stbuf->st_ctimespec.tv_sec = attrs.ctime / 1000000000;
+        stbuf->st_ctimespec.tv_nsec = attrs.ctime % 1000000000;
+    #else
+        stbuf->st_mtim.tv_sec = attrs.mtime / 1000000000;
+        stbuf->st_mtim.tv_nsec = attrs.mtime % 1000000000;
+        
+        stbuf->st_atim.tv_sec = attrs.atime / 1000000000;
+        stbuf->st_atim.tv_nsec = attrs.atime % 1000000000;
+        
+        stbuf->st_ctim.tv_sec = attrs.ctime / 1000000000;
+        stbuf->st_ctim.tv_nsec = attrs.ctime % 1000000000;
+    #endif
+    return 0;
+}
+
+
+
+static fuse_operations afs_oper = {
+    .getattr = afs_getattr,
+    .readdir = afs_readdir,
+    .open = afs_open,
+    .read = afs_read,
+    .write = afs_write,
+    .release = afs_release,
+    .create = afs_create, 
+};
+
 
