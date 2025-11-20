@@ -95,7 +95,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
     std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
 
     std::string cache_dir = "./tmp/cache" + resolved_path; // Use resolved_path
-    std::string file_location = cache_dir + "/" + filename;
+    std::string file_location = cache_dir + (cache_dir.back() == '/' ? "" : "/") + filename;
     
     // Case 1: File is NOT in the local cache
     if (cache.find(file_location) == cache.end()){
@@ -175,8 +175,8 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         
         // Check if file is already open by this client
         if (opened_files.find(file_location)!=opened_files.end()){
-            std::cerr<< "The file is already open, don't try to open it again please" << std::endl;
-            return false;
+            std::cerr<< "The file is already open, but it is okay if you try multiple times" << std::endl;
+            return true;
         }
         
         int64_t timestamp = cache[file_location].timestamp;
@@ -265,7 +265,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 bool FileSystemClient::read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer){
     
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
+    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
     if (cache.find(file_location)==cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
@@ -306,7 +306,7 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
 bool FileSystemClient::write_file(const std::string& filename, const std::string& data, const std::string& directory, std::streampos position){
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
+    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back()=='/' ? "" : "/") + filename; 
 
     if (cache.find(file_location) == cache.end()){
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
@@ -375,7 +375,7 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
 bool FileSystemClient::create_file(const std::string& filename, const std::string& path) {
 
     std::string resolved_path = resolve_server_path(path);
-    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
+    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
     std::string cache_dir = "./tmp/cache" + resolved_path;
 
     if (cache.count(file_location) || opened_files.count(file_location)) {
@@ -436,7 +436,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
 
 bool FileSystemClient::close_file(const std::string& filename, const std::string& directory) {
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache" + resolved_path + "/" + filename;
+    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
     
     auto opened_file_it = opened_files.find(file_location);
     if (opened_file_it == opened_files.end()) {
@@ -632,7 +632,7 @@ bool verify_metadata_consistency(FileSystemClient& client, const std::string& fi
     return true;
 }
 
-
+/*
 int main() {
     // 1. Setup Connection
     std::string address = "localhost:50051";
@@ -702,7 +702,7 @@ int main() {
 }
 
 
-
+*/
 
 /*
 // --- Helper function for testing ---

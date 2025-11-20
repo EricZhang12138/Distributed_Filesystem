@@ -1,0 +1,75 @@
+cmake_minimum_required(VERSION 3.10)
+project(AFS_v1)
+set(CMAKE_CXX_STANDARD 17)
+
+
+
+add_definitions(-D_FILE_OFFSET_BITS=64)
+# 1. Dependencies
+find_package(gRPC REQUIRED)
+find_package(Protobuf REQUIRED) 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FUSE REQUIRED fuse)
+
+# 2. File Generation Setup
+set(PROTO_DIR "/Users/ericzhang/Documents/Filesystems/Basic_Operation/proto_files")
+set(PROTO_FILE "${PROTO_DIR}/afs_operation.proto")
+
+find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin)
+
+# Define ALL generated files (Both standard Proto and gRPC)
+set(PROTO_SRCS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.pb.cc")
+set(PROTO_HDRS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.pb.h")
+set(GRPC_SRCS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.grpc.pb.cc")
+set(GRPC_HDRS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.grpc.pb.h")
+
+# Generate the codes
+add_custom_command(
+    OUTPUT ${PROTO_SRCS} ${PROTO_HDRS} ${GRPC_SRCS} ${GRPC_HDRS}
+    COMMAND protobuf::protoc
+    ARGS --grpc_out="${CMAKE_CURRENT_BINARY_DIR}"
+         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+         --plugin=protoc-gen-grpc="${GRPC_CPP_PLUGIN}"
+         -I "${PROTO_DIR}"
+         "${PROTO_FILE}"
+    DEPENDS ${PROTO_FILE}
+)
+
+# 3. Client Executable
+add_executable(afs_client
+    Basic_Operation/client_code/filesystem_client.cpp
+    FUSE/FUSE_integration.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
+
+target_include_directories(afs_client PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}            # To find generated .pb.h files
+    ${FUSE_INCLUDE_DIRS}                   # To find fuse3 headers
+    Basic_Operation/client_code            # To find filesystem_client.hpp
+    "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
+)
+
+target_link_libraries(afs_client
+    gRPC::grpc++
+    protobuf::libprotobuf
+    ${FUSE_LIBRARIES}
+)
+
+# 4. Server Executable
+add_executable(afs_server
+    Basic_Operation/server_code/filesystem_server.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
+
+target_include_directories(afs_server PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    Basic_Operation/server_code            # To find filesystem_server.hpp
+    "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
+)
+
+target_link_libraries(afs_server
+    gRPC::grpc++
+    protobuf::libprotobuf
+)

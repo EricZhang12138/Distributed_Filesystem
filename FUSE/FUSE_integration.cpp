@@ -38,9 +38,9 @@ static int afs_open(const char* path, struct fuse_file_info *fi){
     (void*) fi;
     std::filesystem::path s_path(path);
     std::string filename = s_path.filename().string();
-    std::string path = s_path.parent_path().string();
+    std::string path_1 = s_path.parent_path().string();
 
-    bool res = get_client() -> open_file(filename, path);
+    bool res = get_client() -> open_file(filename, path_1);
     if (!res){
         return -EACCES; //Access denied
     }
