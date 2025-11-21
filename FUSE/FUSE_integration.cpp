@@ -35,7 +35,7 @@ static int afs_readdir(const char* path, void *buf, fuse_fill_dir_t filler, off_
 
 // 2. Open File
 static int afs_open(const char* path, struct fuse_file_info *fi){
-    (void*) fi;
+    (void) fi;
     std::filesystem::path s_path(path);
     std::string filename = s_path.filename().string();
     std::string path_1 = s_path.parent_path().string();
@@ -69,7 +69,7 @@ static int afs_write(const char* path, const char *buf, size_t size, off_t offse
     std::string directory = s_path.parent_path().string();
 
     std::string data(buf, size);
-    if (!get_client()->write_file(filename,data, directory, (std::streampos) offset)){
+    if (!get_client()->write_file(filename, data, directory, (std::streampos) offset)){
         return -EACCES;
     }
     return size;
@@ -107,12 +107,6 @@ static int afs_create(const char *path, mode_t mode, struct fuse_file_info *fi) 
 static int afs_getattr(const char *path, struct stat *stbuf){
     memset(stbuf, 0, sizeof(struct stat));
     
-    // Handle Root Directory Special Case
-    if (strcmp(path, "/") == 0) {
-        stbuf->st_mode = S_IFDIR | 0755;   // owner permission: 7, group permission: 5, other permission: 5 
-        stbuf->st_nlink = 2;
-        return 0;
-    }
     
     std::filesystem::path fs_path(path);
     std::string dir = fs_path.parent_path().string();

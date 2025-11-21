@@ -28,7 +28,7 @@ grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operati
     // Handle FUSE's request for root "/"
     // Your FUSE code will split "/" into (dir="/", filename="") or similar.
     // We'll reconstruct the intended path on the server.
-    if (directory.empty() || directory == "/") {
+    /*if (directory.empty() || directory == "/") {
         if (filename.empty() || filename == ".") {
             path = root_dir; // Get stats for the root directory
         } else {
@@ -36,8 +36,9 @@ grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operati
             path = root_dir + (root_dir.back() == '/' ? "" : "/") + filename;
         }
     } else {
-        path = directory + "/" + filename;
-    }
+        path = directory + (directory.back() == '/' ? "" : "/") + filename;
+    }*/
+    path = directory + (directory.back() == '/' ? "" : "/") + filename;
     
     std::cout << "GetAttr request for resolved path: " << path << std::endl;
 
