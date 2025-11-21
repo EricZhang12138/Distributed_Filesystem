@@ -44,11 +44,23 @@ grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operati
 
     try {
         // We must use stat() from <sys/stat.h> to get all POSIX info
+
+        // The macOS can be asking whether metadata files like ._file1.txt exists or not
+        // However, we can only see the files that can be listed with ls -a which doesn't contain ._file1.txt
+        // so for every ._file1.txt, we see file not found error and this is totally normal
         struct stat s;
         if (stat(path.c_str(), &s) != 0) {
-             // This will correctly return NOT_FOUND, which FUSE translates to -ENOENT
-             std::cerr << "Error: stat() failed for path: " << path << std::endl;
-             return grpc::Status(grpc::StatusCode::NOT_FOUND, "stat() system call failed or file not found");
+            if (errno == ENOENT) {
+                // 1. ENOENT means "Entry Not Found". 
+                // This is NORMAL behavior when FUSE asks for a file that doesn't exist. 
+                // We silently return NOT_FOUND so FUSE knows to say "No" to the OS.
+                return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+            } else {
+                // 2. Any other error (Permission denied, IO Error) IS a real problem.
+                std::cerr << "Critical Error: stat() failed with errno " << errno 
+                        << " for path: " << path << std::endl;
+                return grpc::Status(grpc::StatusCode::INTERNAL, "stat() system call failed");
+            }
         }
         
         // Populate the response
@@ -89,8 +101,8 @@ grpc::Status FileSystem::open(grpc::ServerContext* context, const afs_operation:
     //get the file name
     std::string filename = request -> filename(); // gRPC generates getter methods
     std::string directory = request -> directory();
-    std::cout << "Client wants " << directory<<"/"<<filename << std::endl;
-    std::string path = directory + "/" + filename;
+    std::cout << "Client wants " << directory<<(directory.back()=='/'? "" : "/")<<filename << std::endl;
+    std::string path = directory + (directory.back()=='/'? "" : "/") + filename;
 
     // have to read the file in binary mode to avoid line ending translation
     std::ifstream file(path, std::ios::binary);
@@ -138,7 +150,7 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     while(reader->Read(&request)){
         if(filename.empty() || path.empty()){
             filename = request.filename();
-            path = request.directory() + "/" + filename;
+            path = request.directory() + (request.directory().back()=='/'? "" : "/") + filename;
             std::filesystem::path file_path(path);
             std::filesystem::create_directories(file_path.parent_path());
             outfile.open(path, std::ios::binary);
@@ -169,7 +181,7 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
 grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operation::FileRequest* request, grpc::ServerWriter< ::afs_operation::FileResponse>* writer) {
     std::string filename = request->filename();
     int64_t timestamp = request -> timestamp();
-    std::string path = request->directory() + "/" + request->filename();
+    std::string path = request->directory() + (request->directory().back()=='/'? "" : "/") + request->filename();
             
     try {
         int64_t timestamp_server = get_file_timestamp(path);
