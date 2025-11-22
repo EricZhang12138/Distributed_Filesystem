@@ -3,7 +3,7 @@
 #include <sstream> 
 #include <chrono>
 #include <thread>
-#include <filesystem>
+
 #include <vector> 
 #include <sys/stat.h>
 
@@ -426,6 +426,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
         attr.atime = s.st_atim.tv_sec;
         attr.mtime = s.st_mtim.tv_sec;
         attr.ctime = s.st_ctim.tv_sec;
+    #endif
 
     attr.mode = s.st_mode;
     attr.nlink = s.st_nlink;

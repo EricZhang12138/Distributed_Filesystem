@@ -157,11 +157,11 @@ static int afs_getattr(const char *path, struct stat *stbuf){
 
 static fuse_operations afs_oper = {
     .getattr = afs_getattr,
-    .readdir = afs_readdir,
     .open = afs_open,
     .read = afs_read,
     .write = afs_write,
     .release = afs_release,
+    .readdir = afs_readdir,
     .create = afs_create, 
 };
 
