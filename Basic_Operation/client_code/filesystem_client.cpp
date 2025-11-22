@@ -418,9 +418,15 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
             return false;
     }
     attr.size = s.st_size;
-    attr.atime = s.st_atimespec.tv_sec;
-    attr.mtime = s.st_mtimespec.tv_sec;
-    attr.ctime = s.st_ctimespec.tv_sec;
+    #ifdef __APPLE__
+        attr.atime = s.st_atimespec.tv_sec;
+        attr.mtime = s.st_mtimespec.tv_sec;
+        attr.ctime = s.st_ctimespec.tv_sec;
+    #else 
+        attr.atime = s.st_atim.tv_sec;
+        attr.mtime = s.st_mtim.tv_sec;
+        attr.ctime = s.st_ctim.tv_sec;
+
     attr.mode = s.st_mode;
     attr.nlink = s.st_nlink;
     attr.uid = getuid();
