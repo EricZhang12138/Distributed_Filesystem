@@ -3,7 +3,7 @@
 #include <sstream> 
 #include <chrono>
 #include <thread>
-
+#include <filesystem>
 #include <vector> 
 #include <sys/stat.h>
 
@@ -589,8 +589,113 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
 }
 
 
+// In filesystem_client.cpp
+
+bool FileSystemClient::rename_file(const std::string& from_name, const std::string& to_name, const std::string& path) {
+    std::string resolved_path = resolve_server_path(path);
+    
+    // 1. Prepare Paths
+    // We add a trailing slash to base_dir so we can build generic paths safely
+    std::string base_dir = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/");
+    
+    std::string old_local_path = base_dir + from_name; 
+    std::string new_local_path = base_dir + to_name;
+
+    // 2. SAFETY CHECK: Destination Collision
+    // If the new name already exists, we must be careful. 
+    if (std::filesystem::exists(new_local_path)) {   // whether this new local path exists
+        if (std::filesystem::is_directory(new_local_path)) {    // if it exists, whether it is a file or a directory, we don't allow it 
+            // If target is a folder and the new name is an existing folder with contents in it, forbid the move.
+            if (!std::filesystem::is_empty(new_local_path)) {
+                std::cerr << "Error: Target '" << to_name << "' is a non-empty directory." << std::endl;
+                return false; 
+            }
+            // If target is an empty folder, it's safe to remove it to make way.
+            std::filesystem::remove(new_local_path);
+        } else {
+            // If target is a file, standard rules allow overwriting (Atomic Save). *****
+            std::filesystem::remove(new_local_path);
+        }
+    }
+
+    // 3. Perform the Physical Rename (Moves folder AND contents)
+    try {
+        std::filesystem::rename(old_local_path, new_local_path);
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Rename failed: " << e.what() << std::endl;
+        return false;
+    }
+
+    // 4. Update In-Memory Maps
+    // We must update the keys for the folder AND all files inside it.
+    
+    std::string old_server_path = resolved_path + (resolved_path.back() == '/' ? "" : "/") + from_name;
+    std::string new_server_path = resolved_path + (resolved_path.back() == '/' ? "" : "/") + to_name;
 
 
+    // helper function to update keys in the map
+    auto update_map_keys = [&](auto& map, const std::string& old_p, const std::string& new_p) {
+        auto it = map.begin();
+        while (it != map.end()) {
+            const std::string& key = it->first;
+            
+            // 1. Check if it strictly starts with the old path
+            if (key.rfind(old_p, 0) == 0) {
+                
+                // 2. SAFETY CHECK: Ensure we aren't matching a partial folder name.
+                // valid if:
+                //   a) key is EXACTLY old_p (Renaming a specific file)
+                //   b) key continues with '/' (Renaming a directory containing this file)
+                
+                bool is_exact_match = (key.length() == old_p.length());
+                bool is_child = (key.length() > old_p.length() && key[old_p.length()] == '/');
+
+                if (is_exact_match || is_child) {
+                    // Correctly perform the replacement
+                    std::string suffix = key.substr(old_p.length());
+                    std::string new_key = new_p + suffix;
+
+                    map[new_key] = std::move(it->second);
+                    it = map.erase(it);
+                    continue; // Move to next iteration
+                }
+            }
+            ++it;
+        }
+    };
+
+    // Update all client structures
+    update_map_keys(cache, old_local_path, new_local_path);
+    update_map_keys(opened_files, old_local_path, new_local_path);
+    update_map_keys(cached_attr, old_server_path, new_server_path);
+
+    // 5. Send RPC to Server (Implementation depends on your proto)
+    grpc::ClientContext context;  
+    afs_operation::RenameRequest request;
+    afs_operation::RenameResponse response;
+    request.set_new_filename(to_name);
+    request.set_filename(from_name);
+    request.set_directory(resolved_path);
+
+    grpc::Status status = stub_ -> rename(&context, request, &response);
+
+    if (!status.ok()) {
+        if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
+            // This is fine! It means the file is new and exists ONLY in our local cache.
+            // We just proceed to rename it locally.
+        } else {
+            std::cerr << "Server rename failed: " << status.error_message() << std::endl;
+            return false; 
+        }
+    }
+
+    std::cout << "Successfully renamed '" << from_name << "' to '" << to_name << "'" << std::endl;
+    return true;
+}
+
+
+
+/*  for every rpc call, we need a context? isn't that inefficient or should I just give the entire filesystem client a context object and reuse it all the time
 // --- NEW: Consistency Checker Function ---
 // This simulates what the FUSE kernel does to verify if the "metadata" (RAM) 
 // matches the "data" (Disk)
@@ -638,7 +743,7 @@ bool verify_metadata_consistency(FileSystemClient& client, const std::string& fi
     std::cout << "[Consistency Check] PASS: Metadata consistent. Size=" << attr.size << ", Time=" << attr.mtime << std::endl;
     return true;
 }
-
+*/
 /*
 int main() {
     // 1. Setup Connection

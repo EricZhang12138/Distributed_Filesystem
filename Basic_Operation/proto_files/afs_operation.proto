@@ -2,6 +2,17 @@ syntax = "proto3";
 package afs_operation;
 
 
+
+message RenameRequest {                // for rename calls 
+    string filename = 1;     // Current name
+    string new_filename = 2; // New name
+    string directory = 3;
+}
+
+message RenameResponse {
+    bool success = 1;
+}
+
 message InitialiseRequest{
     string code_to_initialise = 1;
 }
@@ -56,4 +67,5 @@ service operators{
     rpc compare (FileRequest) returns (stream FileResponse);
     rpc ls (ListDirectoryRequest) returns (ListDirectoryResponse);
     rpc getattr (GetAttrRequest) returns (GetAttrResponse);
+    rpc rename (RenameRequest) returns (RenameResponse);
 }

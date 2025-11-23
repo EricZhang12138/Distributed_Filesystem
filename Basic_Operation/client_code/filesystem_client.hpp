@@ -110,8 +110,12 @@ public:
     bool close_file(const std::string& filename, const std::string& directory);
 
 
+
+
     std::optional<std::map<std::string, std::string>> ls_contents(const std::string& directory); // list the contents in the specified directory
     
     std::optional<FileSystemClient::FileAttributes> get_attributes(const std::string& filename, const std::string& path);
+
+    bool rename_file(const std::string& from_name, const std::string& to_name, const std::string& path);
 
 };

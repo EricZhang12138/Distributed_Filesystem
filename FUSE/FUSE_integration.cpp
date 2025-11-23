@@ -154,6 +154,47 @@ static int afs_getattr(const char *path, struct stat *stbuf){
 }
 
 
+// Rename (Handles both simple renaming and Atomic Saves)
+static int afs_rename(const char* from, const char* to) {
+    std::cout << "FUSE: Rename request from " << from << " to " << to << std::endl;
+
+    std::filesystem::path from_p(from);
+    std::filesystem::path to_p(to);
+
+    std::string from_dir = from_p.parent_path().string();
+    std::string to_dir = to_p.parent_path().string();
+
+    std::string from_name = from_p.filename().string();
+    std::string to_name = to_p.filename().string();
+
+    // Handling Root Directory edge cases
+    if (from_dir == "/") from_dir = "";
+    if (to_dir == "/") to_dir = "";
+
+    // LIMITATION:
+    // Current Client implementation takes only one 'directory' argument.
+    // This implies we can only rename files inside the SAME directory. Basically we can't move file from one directory to the other directory
+    if (from_dir != to_dir) {
+        std::cerr << "Error: Moving files between directories is not yet supported." << std::endl;
+        // Return EXDEV (Cross-device link) is the standard error when a move 
+        // cannot be done atomically (forces cp + rm behavior in some shells), 
+        // but EACCES is safer here.
+        return -EACCES; 
+    }
+
+    // We pass 'from_dir' because we established it is the same as 'to_dir'
+    bool success = get_client()->rename_file(from_name, to_name, from_dir);
+
+    if (!success) {
+        // Broad error code. ideally rename_file would return specific errors,
+        // but ENOENT (No such file) or EACCES (Permission denied) are standard fallbacks.
+        return -ENOENT; 
+    }
+
+    return 0;
+}
+
+
 
 static fuse_operations afs_oper = {
     .getattr = afs_getattr,
@@ -163,6 +204,7 @@ static fuse_operations afs_oper = {
     .release = afs_release,
     .readdir = afs_readdir,
     .create = afs_create, 
+    .rename   = afs_rename,
 };
 
 

@@ -14,8 +14,14 @@ int64_t get_file_timestamp(const std::string& path) {
     }
     // Combine Seconds + Nanoseconds into a single int64 timestamp
     // This guarantees high precision for 'compare' and perfect alignment with 'getattr'
-    int64_t timestamp = (static_cast<int64_t>(s.st_mtimespec.tv_sec) * 1000000000LL) 
-                      + s.st_mtimespec.tv_nsec;
+    #ifdef __APPLE__
+        int64_t timestamp = (static_cast<int64_t>(s.st_mtimespec.tv_sec) * 1000000000LL) 
+                        + s.st_mtimespec.tv_nsec;
+    #else 
+        int64_t timestamp = (static_cast<int64_t>(s.st_mtim.tv_sec) * 1000000000LL) 
+                        + s.st_mtim.tv_nsec;
+    #endif
+        
     return timestamp;
 }
 
@@ -233,8 +239,6 @@ grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operati
 }
 
 
-// In filesystem_server.cpp
-
 grpc::Status FileSystem::ls(grpc::ServerContext* context, const afs_operation::ListDirectoryRequest* request, afs_operation::ListDirectoryResponse* response){
     std::string directory = request -> directory();
     
@@ -287,6 +291,38 @@ void FileSystem::RunServer(){
     
     server->Wait();
 }
+
+
+/// @brief rename a file based on old filename and new filename
+/// @param context 
+/// @param request  contains old filename and new filename and its current directory on the server
+/// @param response   Success or fail
+/// @return 
+grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operation::RenameRequest* request, afs_operation::RenameResponse* response) {
+    std::string directory = request->directory();
+    // Handle root dir logic
+    std::string s_dir = directory + (directory.back() == '/' ? "" : "/");
+    
+    std::string old_path = s_dir + request->filename();
+    std::string new_path = s_dir + request->new_filename();
+
+    try {
+        // std::filesystem::rename is atomic and replaces existing files
+        std::filesystem::rename(old_path, new_path);
+        std::cout << "Server Renamed: " << request->filename() << " -> " << request->new_filename() << std::endl;
+        response->set_success(true);
+        return grpc::Status::OK;
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Rename failed: " << e.what() << std::endl;
+        // If source file doesn't exist, it might be a new local file not yet uploaded.
+        // We return NOT_FOUND so the client knows it's local-only.
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "Source file not found");
+    }
+}
+
+
+
+
 
 
 // --- Main Application Entry Point ---

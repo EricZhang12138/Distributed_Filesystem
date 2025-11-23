@@ -11,13 +11,6 @@
 #include "afs_operation.grpc.pb.h"
 #include "afs_operation.pb.h"
 
-// Unused in the class, but part of your original file
-struct FileInfo{
-    std::string filename;
-    std::string server_path;
-    int64_t timestamp;
-};
-
 
 class FileSystem final : public afs_operation::operators::Service{
 
@@ -38,6 +31,9 @@ private:
     grpc::Status ls(grpc::ServerContext* context, const afs_operation::ListDirectoryRequest* request, afs_operation::ListDirectoryResponse* response) override;
 
     grpc::Status getattr(grpc::ServerContext* context, const afs_operation::GetAttrRequest* request, afs_operation::GetAttrResponse* response) override;
+
+    grpc::Status rename(grpc::ServerContext* context, const afs_operation::RenameRequest* request, afs_operation::RenameResponse* response) override;
+
 };
 
 
