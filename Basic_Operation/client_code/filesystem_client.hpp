@@ -118,4 +118,6 @@ public:
 
     bool rename_file(const std::string& from_name, const std::string& to_name, const std::string& path);
 
+    bool truncate_file(const std::string& filename, const std::string& path, const int size);
+
 };

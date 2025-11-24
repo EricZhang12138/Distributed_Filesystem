@@ -695,6 +695,25 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
 
 
 
+bool FileSystemClient::truncate_file(const std::string& filename, const std::string& path, const int size){
+    std::string resolved_path = resolve_server_path(path);
+    std::string cache_path = std::string("./tmp/cache") + (resolved_path[0] == '/'? "" : "/" ) + resolved_path +filename;
+    try{
+        std::filesystem::resize_file(cache_path, size);
+    } catch(std::filesystem::filesystem_error& e){
+        std::cerr << "Error: " << e.what() << '\n';
+        std::cerr << "Path1: " << e.path1() << '\n';
+        std::cerr << "Error code: " << e.code().message() << '\n';
+        return false;
+    }
+    return true;
+    
+
+}
+
+
+
+
 /*  for every rpc call, we need a context? isn't that inefficient or should I just give the entire filesystem client a context object and reuse it all the time
 // --- NEW: Consistency Checker Function ---
 // This simulates what the FUSE kernel does to verify if the "metadata" (RAM) 

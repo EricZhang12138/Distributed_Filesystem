@@ -1,0 +1,4 @@
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/afs_client.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/afs_server.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/edit_cache.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/rebuild_cache.dir

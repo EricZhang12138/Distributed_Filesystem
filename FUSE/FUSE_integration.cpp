@@ -35,10 +35,17 @@ static int afs_readdir(const char* path, void *buf, fuse_fill_dir_t filler, off_
 
 // 2. Open File
 static int afs_open(const char* path, struct fuse_file_info *fi){
-    (void) fi;
+
     std::filesystem::path s_path(path);
     std::string filename = s_path.filename().string();
     std::string path_1 = s_path.parent_path().string();
+
+     if (fi->flags & O_TRUNC) {
+        if (!get_client()->truncate_file(filename, path_1, 0)){
+        return -ENOENT;
+        };
+    }
+
 
     bool res = get_client() -> open_file(filename, path_1);
     if (!res){
@@ -196,6 +203,76 @@ static int afs_rename(const char* from, const char* to) {
 
 
 
+static int afs_truncate(const char *path, off_t size){
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+
+    if (!get_client()->truncate_file(filename, dir, size)){
+        return -ENOENT;
+    };
+    return 0;
+
+}
+
+/*
+// dummy function, not implemented
+// CHMOD (Change Mode/Permissions)
+// The OS calls this to ensure the temp file has the same rights as the original.
+static int afs_chmod(const char *path, mode_t mode) {
+    // In a real filesystem, you would update the 'mode' in your cached_attr map.
+    // For now, returning 0 is enough to let the editor proceed.
+    std::cout << "FUSE: chmod called for " << path << " (Mock Success)" << std::endl;
+    return 0; 
+}
+
+
+// dummy function, not implemented 
+// UTIMENS (Update Timestamps)
+// The OS calls this to set specific access/modification times.
+static int afs_utimens(const char *path, const struct timespec tv[2]) {
+    // tv[0] is atime, tv[1] is mtime
+    // Again, returning 0 tricks the editor into thinking it succeeded.
+    std::cout << "FUSE: utimens called for " << path << " (Mock Success)" << std::endl;
+    return 0;
+}
+
+#ifdef __APPLE__
+static int afs_setxattr(const char *path, const char *name, const char *value, size_t size, int flags, uint32_t position){
+#else
+static int afs_setxattr(const char *path, const char *name, const char *value, size_t size, int flags) {
+#endif
+    // macOS tries to set 'com.apple.quarantine' etc.
+    // We just say "Okay!" without actually saving it.
+    // Ideally, you'd save this to a map, but for basic saving, ignoring is fine.
+    
+    // On macOS, the function signature might differ slightly depending on FUSE version.
+    // If you get a compile error, check if your version adds a 'uint32_t position' arg.
+    std::cout << "FUSE: setxattr " << name << " (Ignored)" << std::endl;
+    return 0;
+}
+
+// Fake getting attributes (Attribute Not Found)
+#ifdef __APPLE__
+static int afs_getxattr(const char *path, const char *name, char *value, size_t size, uint32_t position) {
+#else
+static int afs_getxattr(const char *path, const char *name, char *value, size_t size) {
+#endif
+    // If we say "Success" but return empty, macOS gets confused.
+    // It's safer to say "I don't have that attribute" (-ENOATTR is standard on macOS).
+    // Note: On Linux this is -ENODATA.
+    
+    #ifdef __APPLE__
+        return -ENOATTR; 
+    #else
+        return -ENODATA;
+    #endif
+}
+
+*/
+
+
+
 static fuse_operations afs_oper = {
     .getattr = afs_getattr,
     .open = afs_open,
@@ -205,6 +282,13 @@ static fuse_operations afs_oper = {
     .readdir = afs_readdir,
     .create = afs_create, 
     .rename   = afs_rename,
+    .truncate = afs_truncate,
+    /*
+    .chmod   = afs_chmod,
+    .utimens = afs_utimens,
+    .setxattr  = afs_setxattr,
+    .getxattr  = afs_getxattr,
+    */
 };
 
 
