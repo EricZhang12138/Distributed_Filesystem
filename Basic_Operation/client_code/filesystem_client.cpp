@@ -728,6 +728,52 @@ bool FileSystemClient::make_directory(const std::string& directory, const uint32
     return true;
 }
 
+bool FileSystemClient::delete_file(const std::string& directory){
+    std::string resolved_path = resolve_server_path(directory);
+    std::string cache_path = std::string("./tmp/cache") + (resolved_path[0] == '/'? "" : "/" ) + resolved_path;
+    std::filesystem::path path(directory);
+    
+    // we need to clean the the three caches we have 
+    auto it_op = opened_files.find(cache_path);
+    if (it_op != opened_files.end()){
+        // we find it in opened_files
+        opened_files.erase(it_op);   // erase by iterator (O(1))
+        std::cout << "Delete file: "<< cache_path << "in opened_files";
+    }
+
+    auto it_ca = cache.find(cache_path);
+    if (it_ca != cache.end()){
+        cache.erase(it_ca);
+        std::cout << "Delete file in: "<< cache_path << "in cache";
+    }
+
+    auto it_attr = cached_attr.find(resolved_path);
+    if (it_attr != cached_attr.end()){
+        cached_attr.erase(it_attr);
+        std::cout << "Delete file in: "<< resolved_path << "in cached_attr";
+    }
+
+    // And then we actually delete the files physically
+    grpc::ClientContext context;
+    afs_operation::Delete_request request;
+    afs_operation::Delete_response response;
+    request.set_directory(resolved_path);
+    grpc::Status status = stub_ -> unlink(&context, request, &response);
+    if (!status.ok()){
+        std::cout << "Directory Deletion Failed: " << status.error_message() << std::endl;
+        return false;
+    }
+    // deletion successful, but don't forget to delete the file in the cache of the client (./tmp/cache)
+    std::error_code ec;
+    if (std::filesystem::remove(cache_path, ec) || !ec){
+        std::cout << "File deleted successfully on the local cache at: " << cache_path << std::endl;
+    }else{
+        std::cerr << "Warning: Failed to remove local cache file: " << ec.message() << std::endl;
+    }
+    return true;
+}
+
+
 
 
 

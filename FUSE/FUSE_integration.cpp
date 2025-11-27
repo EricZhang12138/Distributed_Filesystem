@@ -233,6 +233,25 @@ static int afs_mkdir(const char *path, mode_t mode){
     return 0;
 }
 
+static int afs_unlink(const char *path){
+    std::string full_path(path);
+    if (!get_client() -> delete_file(full_path)){
+        std::cout << "FUSE: file deletion failed: " << full_path << std::endl;
+        return -ENOENT;
+    }
+    return 0;
+}
+
+static int afs_unlink_folder(const char *path){
+    std::string full_path(path);
+    if (!get_client() -> delete_file(full_path)){
+        std::cout << "FUSE: folder deletion failed: " << full_path << std::endl;
+        return -ENOENT;
+    }
+    return 0;
+}
+
+
 
 // dummy function, not implemented
 // CHMOD (Change Mode/Permissions)
@@ -344,6 +363,8 @@ static fuse_operations afs_oper = {
     .create = afs_create, 
     .rename   = afs_rename,
     .truncate = afs_truncate,
+    .unlink = afs_unlink,
+    .rmdir = afs_unlink_folder,
     .mkdir = afs_mkdir,
     .chmod   = afs_chmod,
     .utimens = afs_utimens,

@@ -346,7 +346,7 @@ grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operatio
 
         // ensure the destination folder exists by create_directories()
         std::filesystem::create_directories(std::filesystem::path(new_path).parent_path());
-        
+
         std::filesystem::rename(old_path, new_path);
         std::cout << "Server Renamed: " << request->filename() << " -> " << request->new_filename() << std::endl;
         response->set_success(true);
@@ -357,6 +357,30 @@ grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operatio
         // We return NOT_FOUND so the client knows it's local-only.
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "Source file not found");
     }
+}
+
+
+grpc::Status FileSystem::unlink(grpc::ServerContext* context, const afs_operation::Delete_request* request, afs_operation::Delete_response* response){
+    std::string directory = request -> directory();
+    std::error_code ec;
+    if (std::filesystem::remove(directory, ec)) {
+        std::cout << "File deleted successfully on the server at: " << directory << std::endl;
+    } else {
+        if (ec){
+            std::cout << "Error: "<< ec.message() << std::endl;
+            if (ec == std::errc::permission_denied){
+                std::cout << "Permission denied" << std::endl;;
+                return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "Permission denied");
+            }else if (ec == std::errc::no_such_file_or_directory){
+                std::cout << "File not found: " << directory << std::endl; 
+                return grpc::Status(grpc::StatusCode::NOT_FOUND, "Source file not found");
+            }
+        } else{
+            std::cout << "File doesn't exist at: " << directory << std::endl;
+            return grpc::Status(grpc::StatusCode::NOT_FOUND, "Source file not found");
+        }
+    }
+    return grpc::Status::OK;
 }
 
 

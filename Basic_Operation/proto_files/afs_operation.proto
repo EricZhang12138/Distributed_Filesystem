@@ -10,7 +10,12 @@ message MakeDir_response{
     bool success =1;
 }
 
-
+message Delete_request{
+    string directory = 1;
+}
+message Delete_response{
+    bool success = 1;
+}
 
 message RenameRequest {                // for rename calls 
     string filename = 1;     // Current name
@@ -78,4 +83,5 @@ service operators{
     rpc getattr (GetAttrRequest) returns (GetAttrResponse);
     rpc rename (RenameRequest) returns (RenameResponse);
     rpc mkdir (MakeDir_request) returns (MakeDir_response);
+    rpc unlink (Delete_request) returns (Delete_response);
 }

@@ -36,7 +36,7 @@ private:
     // In-memory cache of file metadata. key is the directory of the file on the client machine (within the cache)
     std::map<std::string, FileInfo> cache;
     
-    // Map of locally open file handles
+    // Map of locally open file handles. Key is the directory of the file on the client machine (within the cache)
     std::map<std::string, FileStreams> opened_files;
 
     std::string server_root_path_;
@@ -119,4 +119,5 @@ public:
 
     bool make_directory(const std::string& directory, const uint32_t mode);
 
+    bool delete_file(const std::string& directory);
 };
