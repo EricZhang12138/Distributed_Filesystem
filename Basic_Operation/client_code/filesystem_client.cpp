@@ -591,15 +591,16 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
 
 // In filesystem_client.cpp
 
-bool FileSystemClient::rename_file(const std::string& from_name, const std::string& to_name, const std::string& path) {
-    std::string resolved_path = resolve_server_path(path);
+bool FileSystemClient::rename_file(const std::string& from_name, const std::string& to_name, const std::string& old_path, const std::string& new_path) {
+    std::string resolved_path = resolve_server_path(old_path);
+    std::string resolved_path_new = resolve_server_path(new_path);
     
     // 1. Prepare Paths
     // We add a trailing slash to base_dir so we can build generic paths safely
     std::string base_dir = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/");
-    
+    std::string base_dir_new = "./tmp/cache" + resolved_path_new + (resolved_path_new.back() == '/' ? "" : "/");
     std::string old_local_path = base_dir + from_name; 
-    std::string new_local_path = base_dir + to_name;
+    std::string new_local_path = base_dir_new + to_name;
 
     // 2. SAFETY CHECK: Destination Collision
     // If the new name already exists, we must be careful. 
@@ -630,7 +631,7 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
     // We must update the keys for the folder AND all files inside it.
     
     std::string old_server_path = resolved_path + (resolved_path.back() == '/' ? "" : "/") + from_name;
-    std::string new_server_path = resolved_path + (resolved_path.back() == '/' ? "" : "/") + to_name;
+    std::string new_server_path = resolved_path_new + (resolved_path_new.back() == '/' ? "" : "/") + to_name;
 
 
     // helper function to update keys in the map
@@ -649,7 +650,7 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
                 
                 bool is_exact_match = (key.length() == old_p.length());
                 bool is_child = (key.length() > old_p.length() && key[old_p.length()] == '/');
-
+                
                 if (is_exact_match || is_child) {
                     // Correctly perform the replacement
                     std::string suffix = key.substr(old_p.length());
@@ -676,6 +677,7 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
     request.set_new_filename(to_name);
     request.set_filename(from_name);
     request.set_directory(resolved_path);
+    request.set_new_directory(resolved_path_new);
 
     grpc::Status status = stub_ -> rename(&context, request, &response);
 
@@ -704,6 +706,23 @@ bool FileSystemClient::truncate_file(const std::string& filename, const std::str
         std::cerr << "Error: " << e.what() << '\n';
         std::cerr << "Path1: " << e.path1() << '\n';
         std::cerr << "Error code: " << e.code().message() << '\n';
+        return false;
+    }
+    return true;
+}
+
+
+bool FileSystemClient::make_directory(const std::string& directory, const uint32_t mode){
+    std::string resolved_path = resolve_server_path(directory);
+    grpc::ClientContext context;
+    afs_operation::MakeDir_request request;
+    afs_operation::MakeDir_response response;
+    request.set_directory(resolved_path);
+    request.set_mode(mode);
+    
+    grpc::Status status = stub_ -> mkdir(&context, request, &response);
+    if (!status.ok()){
+        std::cout << "Directory Creation Failed: " << status.error_message() << std::endl;
         return false;
     }
     return true;

@@ -278,6 +278,39 @@ grpc::Status FileSystem::ls(grpc::ServerContext* context, const afs_operation::L
 }
 
 
+grpc::Status FileSystem::mkdir(grpc::ServerContext* context, const afs_operation::MakeDir_request* request, afs_operation::MakeDir_response* response){
+    std::string directory = request -> directory();
+    uint32_t mode = request -> mode();
+    std::filesystem::path path(directory);
+
+    if (std::filesystem::exists(path)){
+        // folder already exists
+        std::cout << "Path already exists : "<< directory << std::endl;
+        
+        if (!std::filesystem::is_directory(path)){
+            std::cout << "The directory you want to create exists as a path: " << directory << std::endl;
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Path is not a directory");
+        }
+        //return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Path is not a directory");
+        return grpc::Status::OK;
+    }
+    try {
+        if (!std::filesystem::create_directory(path)){
+            std::cout << "Directory creation failed for: " << directory << std::endl;
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "Error occurred trying to create directory");
+        }else{
+            // successfully created the directory
+            std::filesystem::permissions(directory, static_cast<std::filesystem::perms>(mode));
+            std::cout << "Directory creation successful: " << directory << std::endl;
+        }
+    }catch(const std::filesystem::filesystem_error& e){
+        std::cerr << "Error: " << e.what() << std::endl;
+        return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+    }
+    return grpc::Status::OK;
+}
+
+
 void FileSystem::RunServer(){
     std::string server_address = "0.0.0.0:50051";
     
@@ -300,14 +333,20 @@ void FileSystem::RunServer(){
 /// @return 
 grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operation::RenameRequest* request, afs_operation::RenameResponse* response) {
     std::string directory = request->directory();
+    std::string directory_new = request -> new_directory();
     // Handle root dir logic
     std::string s_dir = directory + (directory.back() == '/' ? "" : "/");
+    std::string s_dir_new = directory_new + (directory_new.back() == '/' ? "" : "/");
     
     std::string old_path = s_dir + request->filename();
-    std::string new_path = s_dir + request->new_filename();
+    std::string new_path = s_dir_new + request->new_filename();
 
     try {
         // std::filesystem::rename is atomic and replaces existing files
+
+        // ensure the destination folder exists by create_directories()
+        std::filesystem::create_directories(std::filesystem::path(new_path).parent_path());
+        
         std::filesystem::rename(old_path, new_path);
         std::cout << "Server Renamed: " << request->filename() << " -> " << request->new_filename() << std::endl;
         response->set_success(true);
@@ -322,10 +361,6 @@ grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operatio
 
 
 // implement truncate. Since we may only need to truncate
-
-
-
-
 
 // --- Main Application Entry Point ---
 

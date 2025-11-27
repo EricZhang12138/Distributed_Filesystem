@@ -186,7 +186,8 @@ static int afs_rename(const char* from, const char* to) {
     // Handling Root Directory edge cases
     if (from_dir == "/") from_dir = "";
     if (to_dir == "/") to_dir = "";
-
+    
+    /*
     // LIMITATION:
     // Current Client implementation takes only one 'directory' argument.
     // This implies we can only rename files inside the SAME directory. Basically we can't move file from one directory to the other directory
@@ -197,9 +198,10 @@ static int afs_rename(const char* from, const char* to) {
         // but EACCES is safer here.
         return -EACCES; 
     }
+    */
 
     // We pass 'from_dir' because we established it is the same as 'to_dir'
-    bool success = get_client()->rename_file(from_name, to_name, from_dir);
+    bool success = get_client()->rename_file(from_name, to_name, from_dir, to_dir);
 
     if (!success) {
         // Broad error code. ideally rename_file would return specific errors,
@@ -210,8 +212,6 @@ static int afs_rename(const char* from, const char* to) {
     return 0;
 }
 
-
-
 static int afs_truncate(const char *path, off_t size){
     std::filesystem::path fs_path(path);
     std::string dir = fs_path.parent_path().string();
@@ -221,7 +221,16 @@ static int afs_truncate(const char *path, off_t size){
         return -ENOENT;
     };
     return 0;
+}
 
+static int afs_mkdir(const char *path, mode_t mode){
+    std::filesystem::path path_f(path);
+    std::string fs_path(path_f);
+    if (!get_client()->make_directory(fs_path, mode)){
+        std::cout << "FUSE: directory creation failed: " << fs_path << std::endl;
+        return -ENOENT;
+    }
+    return 0;
 }
 
 
@@ -317,7 +326,12 @@ static int afs_fsync(const char *path, int isdatasync, struct fuse_file_info *fi
     // we can just say "Yes, it's synced".
     return 0;
 }
-
+static int afs_listxattr(const char *path, char *list, size_t size) {
+    // If 'size' is 0, the OS is asking "How large is the list?". 
+    // We return 0 because we have no attributes.
+    // If 'size' > 0, the OS wants the data. We copy nothing and return 0.
+    return 0;
+}
 
 
 static fuse_operations afs_oper = {
@@ -330,15 +344,15 @@ static fuse_operations afs_oper = {
     .create = afs_create, 
     .rename   = afs_rename,
     .truncate = afs_truncate,
-    
+    .mkdir = afs_mkdir,
     .chmod   = afs_chmod,
     .utimens = afs_utimens,
     .setxattr  = afs_setxattr,
     .getxattr  = afs_getxattr,
+    .listxattr = afs_listxattr,
     .statfs  = afs_statfs,
     .chown   = afs_chown,
-    .fsync = afs_fsync,
-    
+    .fsync = afs_fsync,  
 };
 
 

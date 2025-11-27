@@ -2,11 +2,21 @@ syntax = "proto3";
 package afs_operation;
 
 
+message MakeDir_request{
+    string directory = 1;
+    int32 mode = 2;
+}
+message MakeDir_response{
+    bool success =1;
+}
+
+
 
 message RenameRequest {                // for rename calls 
     string filename = 1;     // Current name
     string new_filename = 2; // New name
     string directory = 3;
+    string new_directory = 4;
 }
 
 message RenameResponse {
@@ -67,4 +77,5 @@ service operators{
     rpc ls (ListDirectoryRequest) returns (ListDirectoryResponse);
     rpc getattr (GetAttrRequest) returns (GetAttrResponse);
     rpc rename (RenameRequest) returns (RenameResponse);
+    rpc mkdir (MakeDir_request) returns (MakeDir_response);
 }
