@@ -93,7 +93,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
     
     std::string resolved_path = resolve_server_path(path);
     std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
-
+    
     std::string cache_dir = "./tmp/cache" + resolved_path; // Use resolved_path
     std::string file_location = cache_dir + (cache_dir.back() == '/' ? "" : "/") + filename;
     
@@ -106,15 +106,15 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             std::cerr << "Error creating local cache directory: " << e.what() << std::endl;
             return false; // Fail early if the directory can't be created
         }
-
+        
         afs_operation::FileRequest request;
         request.set_filename(filename);
         request.set_directory(resolved_path);
         
         std::string file_path = file_location; // Use the full file_location path
-
+        
         afs_operation::FileResponse response_temp;
-
+        
         int num_of_retries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
         
@@ -149,7 +149,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
                 cache[file_location] = file_info;
                 std::cout << "File cached successfully" << std::endl;
             }
-
+            
             num_of_retries++;
         }
 
@@ -285,7 +285,7 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
                 return false;
             }
             buffer.resize(size);
-
+                                
             file_stream.read(buffer.data(), size);
             size_t bytes_read = file_stream.gcount();
 
@@ -707,8 +707,6 @@ bool FileSystemClient::truncate_file(const std::string& filename, const std::str
         return false;
     }
     return true;
-    
-
 }
 
 

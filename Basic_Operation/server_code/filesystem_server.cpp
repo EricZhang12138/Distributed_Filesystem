@@ -321,6 +321,8 @@ grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operatio
 }
 
 
+// implement truncate. Since we may only need to truncate
+
 
 
 

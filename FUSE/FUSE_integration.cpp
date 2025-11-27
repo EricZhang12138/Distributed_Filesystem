@@ -42,15 +42,18 @@ static int afs_open(const char* path, struct fuse_file_info *fi){
 
      if (fi->flags & O_TRUNC) {
         if (!get_client()->truncate_file(filename, path_1, 0)){
-        return -ENOENT;
+            std::cout << "FUSE: afs_open is called and failed on "<< filename <<std::endl;
+            return -ENOENT;
         };
     }
 
-
     bool res = get_client() -> open_file(filename, path_1);
+    
     if (!res){
+        std::cout << "FUSE: afs_open is called and failed on " << filename <<std::endl;
         return -EACCES; //Access denied
     }
+    std::cout << "FUSE: afs_open is called on "<< filename <<std::endl;
     return 0;
 }
 
@@ -63,9 +66,11 @@ static int afs_read(const char* path, char* buf, size_t size, off_t offset, stru
     std::vector<char> buffer;
     
     if (!get_client() -> read_file(filename, directory, size, offset,  buffer)){
+        std::cout << "FUSE: afs_read is called and failed on "<< filename <<std::endl;
         return -EACCES; // This may not be the precise error
     }
     memcpy(buf, buffer.data(), buffer.size());  // Actually copy the data!
+    std::cout << "FUSE: afs_read is called on "<< filename <<std::endl;
     return buffer.size(); // return the size of the actual data read
 }
 
@@ -77,8 +82,10 @@ static int afs_write(const char* path, const char *buf, size_t size, off_t offse
 
     std::string data(buf, size);
     if (!get_client()->write_file(filename, data, directory, (std::streampos) offset)){
+        std::cout << "FUSE: afs_write is called and failed on " << filename <<std::endl;
         return -EACCES;
     }
+    std::cout << "FUSE: afs_write is called on " <<filename <<std::endl;
     return size;
 }
 
@@ -91,6 +98,7 @@ static int afs_release(const char *path, struct fuse_file_info *fi) {
     if (dir.empty() || dir == "/") dir = "";
 
     get_client()->close_file(filename, dir);
+    std::cout << "FUSE: afs_release is called on "<< filename <<std::endl;
     return 0;
 }
 
@@ -105,15 +113,16 @@ static int afs_create(const char *path, mode_t mode, struct fuse_file_info *fi) 
     if (dir.empty() || dir == "/") dir = "";
 
     if (!get_client()->create_file(filename, dir)) {
+        std::cout << "FUSE: afs_create is called and failed on "<< filename <<std::endl;
         return -EACCES;
     }
+    std::cout << "FUSE: afs_create is called on "<< filename <<std::endl;
     return 0;
 }
 
 
 static int afs_getattr(const char *path, struct stat *stbuf){
     memset(stbuf, 0, sizeof(struct stat));
-    
     
     std::filesystem::path fs_path(path);
     std::string dir = fs_path.parent_path().string();
@@ -215,7 +224,7 @@ static int afs_truncate(const char *path, off_t size){
 
 }
 
-/*
+
 // dummy function, not implemented
 // CHMOD (Change Mode/Permissions)
 // The OS calls this to ensure the temp file has the same rights as the original.
@@ -269,7 +278,45 @@ static int afs_getxattr(const char *path, const char *name, char *value, size_t 
     #endif
 }
 
-*/
+
+
+// Fake Disk Space Reporting
+static int afs_statfs(const char *path, struct statvfs *stbuf) {
+    // 1. Block Size (Standard is 4KB)
+    stbuf->f_bsize = 4096;
+    stbuf->f_frsize = 4096;
+
+    // 2. Total Blocks (Fake a large size, e.g., ~10GB)
+    // 2621440 blocks * 4096 bytes = ~10 GB
+    stbuf->f_blocks = 2621440;
+
+    // 3. Free Blocks (Pretend it's all free)
+    // This is what the editor checks. If this is 0, save fails.
+    stbuf->f_bfree = 2621440;
+    stbuf->f_bavail = 2621440; 
+
+    // 4. Inodes (File count limits)
+    // Some tools check this too. Give plenty.
+    stbuf->f_files = 10000;
+    stbuf->f_ffree = 10000;
+
+    return 0;
+}
+
+// TextEdit calls this on the temp file during atomic save.
+// We mock success to keep it happy.
+static int afs_chown(const char *path, uid_t uid, gid_t gid) {
+    (void) uid; (void) gid; // Mark as unused to silence compiler warnings
+    std::cout << "FUSE: chown called for " << path << " (Mock Success)" << std::endl;
+    return 0;
+}
+
+static int afs_fsync(const char *path, int isdatasync, struct fuse_file_info *fi) {
+    (void) path; (void) isdatasync; (void) fi;
+    // Since we write synchronously in afs_write (or cache in memory until close),
+    // we can just say "Yes, it's synced".
+    return 0;
+}
 
 
 
@@ -283,12 +330,15 @@ static fuse_operations afs_oper = {
     .create = afs_create, 
     .rename   = afs_rename,
     .truncate = afs_truncate,
-    /*
+    
     .chmod   = afs_chmod,
     .utimens = afs_utimens,
     .setxattr  = afs_setxattr,
     .getxattr  = afs_getxattr,
-    */
+    .statfs  = afs_statfs,
+    .chown   = afs_chown,
+    .fsync = afs_fsync,
+    
 };
 
 
