@@ -14,6 +14,10 @@ jobs:
     - name: Copy code
       uses: actions/checkout@v4
 
+    - name: Create Build Directory
+      run: |
+        mkdir -p build
+
     - name: Install Dependencies
       run: | 
         sudo apt-get update
@@ -34,16 +38,16 @@ jobs:
         cmake ..
 
     - name: Configure Make
-      run: make
+      run: |
+        cd build
+        make
 
     - name: Run Test
       run: | 
         cd build
-        # 1. Start the server in the background (& ensures this is running in the background)
-        ./afs_server &
+        ./afs_server &     # 1. Start the server in the background (& ensures this is running in the background)
 
-        # 2. Capture the process ID
-        SERVER_PID = $!
+        SERVER_PID=$!      # 2. Capture the process ID
 
         echo "Waiting for server to start..."
         sleep 3
