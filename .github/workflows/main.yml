@@ -36,3 +36,20 @@ jobs:
     - name: Configure Make
       run: make
 
+    - name: Run Test
+      run: | 
+        cd build
+        # 1. Start the server in the background (& ensures this is running in the background)
+        ./afs_server &
+
+        # 2. Capture the process ID
+        SERVER_PID = $!
+
+        echo "Waiting for server to start..."
+        sleep 3
+
+        #4. Run the test client
+        ./afs_test
+
+        kill $SERVER_PID
+
