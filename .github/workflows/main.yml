@@ -53,7 +53,7 @@ jobs:
         sleep 3
 
         #4. Run the test client
-        ./afs_test
+        ./client_test
 
         kill $SERVER_PID
 
