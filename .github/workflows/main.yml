@@ -1,1 +1,38 @@
-# yet to add the main.yml configuration file
+name: Build and Test AFS  # name of the module
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  dependency_setup:  # name of this specific job
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Copy code
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: | 
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          pkg-config \
+          libfuse-dev \
+          protobuf-compiler \
+          libprotobuf-dev \
+          libgrpc++-dev \
+          libprotoc-dev \
+          protobuf-compiler-grpc
+
+    - name: Configure cmake
+      run: |
+        cd build 
+        cmake ..
+
+    - name: Configure Make
+      run: make
+
