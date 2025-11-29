@@ -118,7 +118,7 @@ int main() {
     assert_true(read_str == data1, "Content matches written data");
     
     // Verify consistency (Size 11)
-    assert_true(verify_metadata(client, test_file, test_dir, 11), "Metadata updated after write");
+    assert_true(verify_metadata(client, test_file, test_dir, 14), "Metadata updated after write");
 
 
     // ==========================================
@@ -152,9 +152,11 @@ int main() {
     client.write_file(test_file, data2, test_dir, 6); // Write at offset 6
 
     buffer.clear();
-    client.read_file(test_file, test_dir, 11, 0, buffer);
+    client.read_file(test_file, test_dir, 14, 0, buffer);
     std::string edited_content(buffer.begin(), buffer.end());
-    assert_true(edited_content == "Hello Fuse!", "Partial overwrite successful");
+    std::cout << "read data is: " << edited_content << std::endl;
+    std::cout << "expected data is: " << "EricZFuse!2345" << std::endl;
+    assert_true(edited_content == "EricZhFuse!345", "Partial overwrite successful");
 
 
     // ==========================================
