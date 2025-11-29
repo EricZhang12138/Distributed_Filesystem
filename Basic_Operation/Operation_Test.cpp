@@ -104,7 +104,7 @@ int main() {
     // ==========================================
     log_test("Write & Read (Local)");
 
-    std::string data1 = "Hello World";
+    std::string data1 = "EricZhang12345";
     bool write_res = client.write_file(test_file, data1, test_dir, 0);
     assert_true(write_res, "Written 'Hello World' to file");
 
@@ -113,6 +113,8 @@ int main() {
     assert_true(read_res, "Read successful");
     
     std::string read_str(buffer.begin(), buffer.end());
+    std::cout << "read data is: " << read_str << std::endl;
+    std::cout << "expected data is: " << data1 << std::endl;
     assert_true(read_str == data1, "Content matches written data");
     
     // Verify consistency (Size 11)

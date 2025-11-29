@@ -287,6 +287,7 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
             buffer.resize(size);
                                 
             file_stream.read(buffer.data(), size);
+            
             size_t bytes_read = file_stream.gcount();
 
             std::cout << "Requested " << size << " bytes, actually read " << bytes_read << "." << std::endl;
@@ -327,6 +328,7 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
             }
 
             file_stream.write(data.data(), data.size());
+            file_stream.flush();
 
             if (file_stream.fail()) {
                 std::cerr << "Error: Failed to write data to " << filename << std::endl;
