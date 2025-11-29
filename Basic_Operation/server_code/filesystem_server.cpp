@@ -388,9 +388,16 @@ grpc::Status FileSystem::unlink(grpc::ServerContext* context, const afs_operatio
 
 // --- Main Application Entry Point ---
 
-int main(){
+int main(int argc, char** argv){
+    if (argc != 2){
+        return 1; // fail and end
+    }
+    std::string path(argv[1]);
     FileSystem filesys;
+    filesys.root_dir = path;
+    std::cout << "Running filesystem server...... Current root directory on the server is " << path << std::endl;
     filesys.RunServer();
+
 
     std::cout << "Server Stopped" << std::endl;
     return 0;

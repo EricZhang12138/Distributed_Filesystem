@@ -45,7 +45,8 @@ jobs:
     - name: Run Test
       run: | 
         cd build
-        ./afs_server &     # 1. Start the server in the background (& ensures this is running in the background)
+        mkdir -p server_test
+        ./afs_server ./server_test &     # 1. Start the server in the background (& ensures this is running in the background)
 
         SERVER_PID=$!      # 2. Capture the process ID
 

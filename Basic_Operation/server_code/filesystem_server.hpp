@@ -15,7 +15,7 @@
 class FileSystem final : public afs_operation::operators::Service{
 
 public: 
-    std::string root_dir = "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
+    std::string root_dir;// = "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
     void RunServer();
 
 private:
