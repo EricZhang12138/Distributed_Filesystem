@@ -25,6 +25,8 @@ int64_t get_file_timestamp(const std::string& path) {
     return timestamp;
 }
 
+
+
 // REPLACE the entire getattr function with this:
 grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operation::GetAttrRequest* request, afs_operation::GetAttrResponse* response) {
     std::string directory = request->directory();
@@ -311,21 +313,6 @@ grpc::Status FileSystem::mkdir(grpc::ServerContext* context, const afs_operation
 }
 
 
-void FileSystem::RunServer(){
-    std::string server_address = "0.0.0.0:50051";
-    
-    grpc::ServerBuilder builder;
-    
-    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-    builder.RegisterService(this);
-    
-    std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-    std::cout << "Server listening on " << server_address << std::endl;
-    
-    server->Wait();
-}
-
-
 /// @brief rename a file based on old filename and new filename
 /// @param context 
 /// @param request  contains old filename and new filename and its current directory on the server
@@ -383,6 +370,23 @@ grpc::Status FileSystem::unlink(grpc::ServerContext* context, const afs_operatio
     return grpc::Status::OK;
 }
 
+void FileSystem::RunServer(){
+    std::string server_address = "0.0.0.0:50051";
+    
+    grpc::ServerBuilder builder;
+    
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(this);
+    
+    std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
+    std::cout << "Server listening on " << server_address << std::endl;
+    
+    server->Wait();
+}
+
+FileSystem::FileSystem(std::string root_dir_input): root_dir(root_dir_input){
+    starting_length = root_dir.size();
+}
 
 // implement truncate. Since we may only need to truncate
 
@@ -393,8 +397,7 @@ int main(int argc, char** argv){
         return 1; // fail and end
     }
     std::string path(argv[1]);
-    FileSystem filesys;
-    filesys.root_dir = path;
+    FileSystem filesys(path);
     std::cout << "Running filesystem server...... Current root directory on the server is " << path << std::endl;
     filesys.RunServer();
 

@@ -12,12 +12,22 @@
 #include "afs_operation.pb.h"
 
 
+
+struct FID {
+    int Volume_number;       // I only want the root, different user folders within usr and the projects folder to have a seperate volume number
+                                // which are (root_dir), (root_dir/usr/Eric   root_dir/usr/Brian ...), root_dir/projects
+    int Vnode_number;
+    int uniquifier;
+}; 
+
 class FileSystem final : public afs_operation::operators::Service{
 
 public: 
-    std::string root_dir;// = "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
+    std::string root_dir;           // = "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
+    int starting_length;
+    std::unordered_map<FID, std::string> file_map;
     void RunServer();
-
+    FileSystem(std::string root_dir);
 private:
 
     grpc::Status request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) override;
