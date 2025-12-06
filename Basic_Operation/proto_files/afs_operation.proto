@@ -85,3 +85,23 @@ service operators{
     rpc mkdir (MakeDir_request) returns (MakeDir_response);
     rpc unlink (Delete_request) returns (Delete_response);
 }
+
+
+
+service NotificationService {
+  // Client subscribes to get cache invalidation callbacks
+  rpc Subscribe(SubscribeRequest) returns (stream Notification);
+}
+
+message SubscribeRequest {
+  string client_id = 1;
+  repeated string file_ids = 2; 
+}
+
+message Notification {
+  string id = 1;
+  string message = 2;  // "INVALIDATE"
+  int64 timestamp = 3;
+  string type = 4;     // "CACHE_INVALIDATION"
+  string file_id = 5;  // Which file to invalidate
+}

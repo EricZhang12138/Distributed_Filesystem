@@ -8,6 +8,7 @@ add_definitions(-D_FILE_OFFSET_BITS=64)
 find_package(gRPC REQUIRED)
 find_package(Protobuf REQUIRED) 
 find_package(PkgConfig REQUIRED)
+find_package(Boost REQUIRED)
 pkg_check_modules(FUSE REQUIRED fuse)
 
 # 2. File Generation Setup
@@ -53,6 +54,7 @@ target_link_libraries(afs_client
     gRPC::grpc++
     protobuf::libprotobuf
     ${FUSE_LIBRARIES}
+    Boost::boost
 )
 
 # 4. Server Executable
