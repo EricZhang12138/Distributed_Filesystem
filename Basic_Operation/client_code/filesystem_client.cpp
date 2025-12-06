@@ -10,8 +10,15 @@
 
  
 FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stub_(afs_operation::operators::NewStub(channel)){
+    // Generate a universally unique identifier for client ID
+    boost::uuids::random_generator gen;
+    boost::uuids::uuid id = gen();
+    client_id = boost::uuids::to_string(id); // convert to string
+    std::cout << "Client ID: " << client_id << std::endl;
+
     afs_operation::InitialiseRequest request;
     request.set_code_to_initialise("I want input/output directory");
+    request.set_client_id(client_id);
     afs_operation::InitialiseResponse response;
     grpc::ClientContext context;
     grpc::Status status = stub_ -> request_dir(&context, request, &response);

@@ -9,13 +9,12 @@
 #include "afs_operation.grpc.pb.h"
 #include "afs_operation.pb.h"
 #include <filesystem>
-#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid.hpp>  // universally unique identifier
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include "file_attributes.hpp"
 
 class FileSystemClient {
-
 private:
     /**
      * @brief Holds local cache metadata for a file.
@@ -44,7 +43,7 @@ private:
 
     std::string server_root_path_;
 
-    int client_id;   
+    std::string client_id;   
 
     
 

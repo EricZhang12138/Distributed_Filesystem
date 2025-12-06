@@ -22,6 +22,7 @@ public:
     void RunServer();
     FileSystem(std::string root_dir);
 private:
+    std::unordered_set<std::string> clients_db;
 
     grpc::Status request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) override;
 

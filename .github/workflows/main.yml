@@ -30,7 +30,8 @@ jobs:
           libprotobuf-dev \
           libgrpc++-dev \
           libprotoc-dev \
-          protobuf-compiler-grpc
+          protobuf-compiler-grpc \
+          libboost-all-dev
 
     - name: Configure cmake
       run: |

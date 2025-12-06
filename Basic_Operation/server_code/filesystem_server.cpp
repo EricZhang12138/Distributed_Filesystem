@@ -98,6 +98,14 @@ grpc::Status FileSystem::request_dir(grpc::ServerContext* context, const afs_ope
     if (request->code_to_initialise() == "I want input/output directory"){
         std::cout << "Received client request(later I should add the name of the client)" << std::endl;
         response->set_root_path(root_dir);
+        std::string client_id = request -> client_id();
+        if (clients_db.find(client_id) == clients_db.end()){ // client is not in the clients_db yet so we are good
+            clients_db.insert(client_id);
+            std::cout << "Connection successful and the client ID is " << client_id << std::endl;
+        }else{
+            std::cout << "Client ID already exists, please retry later ...." << std::endl;
+        }
+
         return grpc::Status::OK;
     }else{
         std::cerr << "There is an error while passing the input/output files directory"<<std::endl;

@@ -30,6 +30,7 @@ message RenameResponse {
 
 message InitialiseRequest{
     string code_to_initialise = 1;
+    string client_id = 2;
 }
 message InitialiseResponse{
     string root_path = 1;
@@ -74,6 +75,40 @@ message GetAttrResponse {
 }
 
 
+message SubscribeRequest {
+  string client_id = 1;
+  // No file_ids here!
+}
+
+message RegisterRequest {
+  string client_id = 1;
+  string file_id = 2;
+}
+
+message Notification {
+    string filename = 1;
+    string directory = 2;    // Useful to distinguish files with same name in different folders
+    string message = 3;      // e.g. "UPDATE", "DELETE", "RENAME"
+    int64 timestamp = 4;     // The last time the file was changed recorded on the server to update the version of the file in cache
+    string content = 5;
+}
+
+message RegisterResponse {
+    bool success = 1;
+    string message = 2;      // Optional error message or debug info
+}
+
+message UnregisterRequest {
+    string client_id = 1;
+    string file_id = 2;      // The specific file to stop watching
+}
+
+message UnregisterResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+
 service operators{
     rpc request_dir (InitialiseRequest) returns (InitialiseResponse);
     rpc open (FileRequest) returns (stream FileResponse);
@@ -84,24 +119,10 @@ service operators{
     rpc rename (RenameRequest) returns (RenameResponse);
     rpc mkdir (MakeDir_request) returns (MakeDir_response);
     rpc unlink (Delete_request) returns (Delete_response);
+    rpc Subscribe(SubscribeRequest) returns (stream Notification);
+    rpc RegisterCallback(RegisterRequest) returns (RegisterResponse);
+    rpc UnregisterCallback(UnregisterRequest) returns (UnregisterResponse);
 }
 
 
 
-service NotificationService {
-  // Client subscribes to get cache invalidation callbacks
-  rpc Subscribe(SubscribeRequest) returns (stream Notification);
-}
-
-message SubscribeRequest {
-  string client_id = 1;
-  repeated string file_ids = 2; 
-}
-
-message Notification {
-  string id = 1;
-  string message = 2;  // "INVALIDATE"
-  int64 timestamp = 3;
-  string type = 4;     // "CACHE_INVALIDATION"
-  string file_id = 5;  // Which file to invalidate
-}
