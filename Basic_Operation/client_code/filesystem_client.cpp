@@ -41,7 +41,7 @@ std::string FileSystemClient::resolve_server_path(const std::string& user_path) 
     return full_path.generic_string(); // Use generic_string for consistent '/' separators
 }
 
-std::optional<FileSystemClient::FileAttributes> FileSystemClient::get_attributes(const std::string& filename, const std::string& path) {
+std::optional<FileAttributes> FileSystemClient::get_attributes(const std::string& filename, const std::string& path) {
     // Note: resolve_server_path is still correct, as it gives the gRPC
     // server the "directory" string it expects (e.g., /path/to/root/test_dir)
     std::string resolved_path = resolve_server_path(path);

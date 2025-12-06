@@ -12,7 +12,7 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-
+#include "file_attributes.hpp"
 
 class FileSystemClient {
 
@@ -44,19 +44,13 @@ private:
 
     std::string server_root_path_;
 
+    int client_id;   
+
     
 
 public:
-    struct FileAttributes {
-        int64_t size;
-        int64_t atime;
-        int64_t mtime;
-        int64_t ctime;
-        uint32_t mode;
-        uint32_t nlink;
-        uint32_t uid;
-        uint32_t gid;
-    };
+    
+
     // Map of locally cached FileAttributes. key is the directory of the file on the server
     std::map<std::string, FileAttributes> cached_attr;
 
@@ -114,7 +108,7 @@ public:
 
     std::optional<std::map<std::string, std::string>> ls_contents(const std::string& directory); // list the contents in the specified directory
     
-    std::optional<FileSystemClient::FileAttributes> get_attributes(const std::string& filename, const std::string& path);
+    std::optional<FileAttributes> get_attributes(const std::string& filename, const std::string& path);
 
     bool rename_file(const std::string& from_name, const std::string& to_name, const std::string& old_path, const std::string& new_path);
 
