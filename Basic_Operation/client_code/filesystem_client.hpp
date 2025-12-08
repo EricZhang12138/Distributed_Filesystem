@@ -13,52 +13,42 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include "file_attributes.hpp"
+#include <thread>
 
 class FileSystemClient {
 private:
-    /**
-     * @brief Holds local cache metadata for a file.
-     */
     struct FileInfo {
-        bool is_changed;      // True if the local copy has been modified
+        bool locally_modified;      // True if the local copy has been modified and then if is_changed == true, we push it to the server on close()
+        //bool is_stale;             // this is used when a file on the server is changed. The subscriber thread marks the specific file as stale and the next time when you open the file, we fetch the file from the server to update 
         int64_t timestamp;    // The last known timestamp from the server
         std::string filename; // The base name of the file
     };
-    /**
-     * @brief Holds the file stream handles for an open file.
-     */
     struct FileStreams {
         std::unique_ptr<std::ifstream> read_stream;
         std::unique_ptr<std::ofstream> write_stream;
     };
-
     // The gRPC stub for communicating with the server
     std::unique_ptr<afs_operation::operators::Stub> stub_;
-    
     // In-memory cache of file metadata. key is the directory of the file on the client machine (within the cache)
     std::map<std::string, FileInfo> cache;
-    
     // Map of locally open file handles. Key is the directory of the file on the client machine (within the cache)
     std::map<std::string, FileStreams> opened_files;
-
+    std::mutex cache_mutex; // this mutex is for cache, cache_attr and opened_files all together
     std::string server_root_path_;
-
-    std::string client_id;   
-
-    
+    std::string client_id;
+    std::unique_ptr<grpc::ClientContext> subscriber_context_;
+    std::thread subscriber_thread;
+    void RunSubscriber();
 
 public:
-    
-
     // Map of locally cached FileAttributes. key is the directory of the file on the server
     std::map<std::string, FileAttributes> cached_attr;
-
-
     /**
      * @brief Constructs the client and initializes the connection with the server.
      * @param channel The gRPC channel to use for communication.
      */
     FileSystemClient(std::shared_ptr<grpc::Channel> channel);
+    ~FileSystemClient();
 
     std::string resolve_server_path(const std::string& user_path);
 

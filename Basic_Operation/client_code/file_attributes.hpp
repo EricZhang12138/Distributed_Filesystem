@@ -13,6 +13,4 @@ struct FileAttributes {
         uint32_t gid;
     };
 
-
-
 #endif
