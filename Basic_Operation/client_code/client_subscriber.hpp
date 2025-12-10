@@ -18,7 +18,7 @@ void FileSystemClient::RunSubscriber() {
         std::string full_path = note.directory() + (note.directory().back() == '/' ? "" : "/") + note.filename();
 
         // Thread-safe cache update
-        std::lock_guard<std::mutex> lock(cache_mutex_);
+        // std::lock_guard<std::mutex> lock(cache_mutex_);
 
         if (note.message() == "UPDATE") {
             // Mark file as stale so next open_file fetches it again

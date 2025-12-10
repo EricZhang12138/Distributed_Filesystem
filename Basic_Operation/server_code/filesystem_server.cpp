@@ -213,10 +213,11 @@ grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operati
         
             const std::size_t chunk_size = 4096;
             char buffer[chunk_size];
+            bool sent_at_least_once = false; // Flag to track if we sent anything
             while(true){
                 new_content.read(buffer, chunk_size);
                 std::streamsize len = new_content.gcount();
-                if(len <= 0)break;
+                if(len <= 0 && sent_at_least_once)break;
                 
                 afs_operation::FileResponse response;
                 response.set_content(buffer, len);
@@ -226,6 +227,7 @@ grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operati
                     std::cerr << "Failed to write chunk " << " to client" << std::endl;
                     return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "Failed to write chunk");
                 }
+                sent_at_least_once = true;
             }
 
             std::cout << "Cache for '" << filename << "' is stale. Sent update." << std::endl;

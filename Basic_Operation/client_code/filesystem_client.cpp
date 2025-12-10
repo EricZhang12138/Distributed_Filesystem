@@ -171,6 +171,18 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
                 cache[file_location] = file_info;
                 std::cout << "File cached successfully" << std::endl;
             }
+            // update cached_attr
+            std::string server_key = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+            auto attr_it = cached_attr.find(server_key);
+            if (attr_it != cached_attr.end()) {
+                attr_it->second.mtime = last_timestamp;
+                attr_it->second.atime = last_timestamp;
+                attr_it->second.ctime = last_timestamp;
+                try {
+                    attr_it->second.size = std::filesystem::file_size(file_location);
+                } catch (...) {}
+                std::cout << "Synced cached_attr for new download." << std::endl;
+            }
             
             num_of_retries++;
         }
@@ -264,6 +276,20 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
                 return false;
             }
             outfile.close();
+            std::string server_key = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+            auto attr_it = cached_attr.find(server_key);
+            if (attr_it != cached_attr.end()) {
+                // Update timestamp to what the server just sent us
+                attr_it->second.mtime = new_timestamp; 
+                attr_it->second.atime = new_timestamp;
+                attr_it->second.ctime = new_timestamp;
+                
+                // Update size from the actual file on disk
+                try {
+                    attr_it->second.size = std::filesystem::file_size(file_location);
+                } catch (...) {}
+                std::cout << "Synced cached_attr after update." << std::endl;
+            }
             std::cout << "Successfully overwrote file: " << file_location << std::endl;
         
         } else {
