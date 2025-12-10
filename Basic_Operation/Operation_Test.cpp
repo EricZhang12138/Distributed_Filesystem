@@ -178,8 +178,10 @@ int main() {
     assert_true(!found_old && found_new, "Old name gone, new name present");
 
 
+
+
     // ==========================================
-    // Test 7: Cleanup (Delete)
+    // Test 8: Cleanup (Delete)
     // ==========================================
     log_test("Deletion");
 

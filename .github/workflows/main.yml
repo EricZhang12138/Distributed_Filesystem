@@ -2,9 +2,9 @@ name: Build and Test AFS  # name of the module
 
 on:
   push:
-    branches: ["main", "Register_Callback"]
+    branches: ["main"]
   pull_request:
-    branches: ["main", "Register_Callback"]
+    branches: ["main"]
 
 jobs:
   dependency_setup:  # name of this specific job
