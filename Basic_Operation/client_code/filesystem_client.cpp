@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <vector> 
 #include <sys/stat.h>
+#include <thread>
 
 
  
@@ -22,6 +23,9 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
     afs_operation::InitialiseResponse response;
     grpc::ClientContext context;
     grpc::Status status = stub_ -> request_dir(&context, request, &response);
+
+    // set up the subscribe channel to the server
+
     if (!status.ok()){
         std::cerr << "Unable to retrieve the path for input/output files on the server" << std::endl;
         this->server_root_path_ ="/"; // default when it fails
@@ -29,6 +33,18 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
         // Store the root path instead of just printing it
         this->server_root_path_ = response.root_path(); 
         std::cerr << "Client initialized. Server root directory: " << this->server_root_path_ << std::endl; 
+    }
+}
+
+
+FileSystemClient::~FileSystemClient(){
+    // 1. stop the thread using subscriber_context
+    if (subscriber_context_){
+        subscriber_context_ -> TryCancel();
+    }
+    // join the thread before the object is destroyed
+    if (subscriber_thread.joinable()){
+        subscriber_thread.join();
     }
 }
 
@@ -97,7 +113,6 @@ std::optional<FileAttributes> FileSystemClient::get_attributes(const std::string
 
 
 bool FileSystemClient::open_file(std::string filename, std::string path){
-    
     std::string resolved_path = resolve_server_path(path);
     std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
     
@@ -182,7 +197,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         
         // Check if file is already open by this client
         if (opened_files.find(file_location)!=opened_files.end()){
-            std::cerr<< "The file is already open, but it is okay if you try multiple times" << std::endl;
+            std::cerr<< "The file: " << file_location << "is already open, but it is okay if you try multiple times" << std::endl;
             return true;
         }
         
@@ -231,7 +246,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 
         if (new_timestamp != 0) {
             cache[file_location].timestamp = new_timestamp;
-            cache[file_location].is_changed = false;
+            cache[file_location].locally_modified = false;
         }
 
         if (update_bit == 1) {
@@ -343,7 +358,7 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
             }
             
             // 1. Mark the file content as changed for eventual upload
-            cache[file_location].is_changed = true;
+            cache[file_location].locally_modified = true;
 
             // Update the cached_attr to reflect changes immediately
 
@@ -467,7 +482,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         return false;
     }
 
-    if (cache_it->second.is_changed) {
+    if (cache_it->second.locally_modified) {
         std::cout << "File '" << filename << "' was modified. Flushing to server..." << std::endl;
 
         std::ofstream& write_stream = *(opened_file_it->second.write_stream);
