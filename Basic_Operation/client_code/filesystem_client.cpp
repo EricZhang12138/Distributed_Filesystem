@@ -24,8 +24,6 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
     grpc::ClientContext context;
     grpc::Status status = stub_ -> request_dir(&context, request, &response);
 
-    // set up the subscribe channel to the server
-
     if (!status.ok()){
         std::cerr << "Unable to retrieve the path for input/output files on the server" << std::endl;
         this->server_root_path_ ="/"; // default when it fails
@@ -34,6 +32,11 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
         this->server_root_path_ = response.root_path(); 
         std::cerr << "Client initialized. Server root directory: " << this->server_root_path_ << std::endl; 
     }
+
+    // set up the subscribe channel to the server
+    RunSubscriber();
+
+    
 }
 
 
@@ -74,10 +77,12 @@ std::optional<FileAttributes> FileSystemClient::get_attributes(const std::string
     request.set_directory(resolved_path); // Pass the server-resolved path 
     
     std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    cache_mutex.lock();
     auto it = cached_attr.find(file_loca_server);
     if (it != cached_attr.end()){   // this means file_loca_server exists in the cached_attr already
         return it -> second;
     }
+    cache_mutex.unlock();
 
     afs_operation::GetAttrResponse response;
     grpc::ClientContext context;
@@ -105,8 +110,9 @@ std::optional<FileAttributes> FileSystemClient::get_attributes(const std::string
     attrs.uid = getuid();
     attrs.gid = getgid(); // have to change the uid and gid to my local machine's to access them freely
                           // This approach assumes the client is authentic
-    
+    cache_mutex.lock();
     cached_attr[file_loca_server] = attrs;
+    cache_mutex.unlock();
     
     return attrs;
 }
@@ -173,6 +179,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             }
             // update cached_attr
             std::string server_key = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+            cache_mutex.lock();
             auto attr_it = cached_attr.find(server_key);
             if (attr_it != cached_attr.end()) {
                 attr_it->second.mtime = last_timestamp;
@@ -183,6 +190,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
                 } catch (...) {}
                 std::cout << "Synced cached_attr for new download." << std::endl;
             }
+            cache_mutex.unlock();
             
             num_of_retries++;
         }
@@ -201,7 +209,9 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             cache.erase(file_location);
             return false;
         }
+        cache_mutex.lock();
         opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+        cache_mutex.unlock();
         return true;
 
     } else { 
@@ -277,19 +287,20 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             }
             outfile.close();
             std::string server_key = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+            cache_mutex.lock();
             auto attr_it = cached_attr.find(server_key);
             if (attr_it != cached_attr.end()) {
                 // Update timestamp to what the server just sent us
                 attr_it->second.mtime = new_timestamp; 
                 attr_it->second.atime = new_timestamp;
                 attr_it->second.ctime = new_timestamp;
-                
                 // Update size from the actual file on disk
                 try {
                     attr_it->second.size = std::filesystem::file_size(file_location);
                 } catch (...) {}
                 std::cout << "Synced cached_attr after update." << std::endl;
             }
+            cache_mutex.unlock();
             std::cout << "Successfully overwrote file: " << file_location << std::endl;
         
         } else {
@@ -390,7 +401,7 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
 
             // Reconstruct the key exactly how get_attributes does it
             std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
-            
+            cache_mutex.lock();
             auto attr_it = cached_attr.find(file_loca_server);
             if (attr_it != cached_attr.end()) {
                 try {
@@ -415,6 +426,7 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
                     // We don't return false here because the write physically succeeded
                 }
             }
+            cache_mutex.unlock();
 
             std::cout << "Successfully wrote to " << filename << " and marked as changed." << std::endl;
             return true;
@@ -484,8 +496,9 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     attr.gid = getgid();
 
     std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    cache_mutex.lock();
     cached_attr[file_loca_server] = attr;
-
+    cache_mutex.unlock();
     std::cout << "Successfully created and opened '" << filename << "' for writing." << std::endl;
     return true;
 }
@@ -588,6 +601,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         
         std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
+        cache_mutex.lock();
         auto attr_it = cached_attr.find(file_loca_server);
         if (attr_it != cached_attr.end()) {
             attr_it->second.mtime = server_nanos; // Now 'ls -l' shows the correct time!
@@ -598,6 +612,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
                 attr_it->second.size = std::filesystem::file_size(file_location);
             } catch (...) {}
         }
+        cache_mutex.unlock();
 
 
         std::cout << "File flushed successfully." << std::endl;
@@ -716,9 +731,12 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
     };
 
     // Update all client structures
+
+    cache_mutex.lock();
     update_map_keys(cache, old_local_path, new_local_path);
     update_map_keys(opened_files, old_local_path, new_local_path);
     update_map_keys(cached_attr, old_server_path, new_server_path);
+    cache_mutex.unlock();
 
     // 5. Send RPC to Server (Implementation depends on your proto)
     grpc::ClientContext context;  
@@ -797,11 +815,13 @@ bool FileSystemClient::delete_file(const std::string& directory){
         std::cout << "Delete file in: "<< cache_path << "in cache";
     }
 
+    cache_mutex.lock();
     auto it_attr = cached_attr.find(resolved_path);
     if (it_attr != cached_attr.end()){
         cached_attr.erase(it_attr);
         std::cout << "Delete file in: "<< resolved_path << "in cached_attr";
     }
+    cache_mutex.unlock();
 
     // And then we actually delete the files physically
     grpc::ClientContext context;

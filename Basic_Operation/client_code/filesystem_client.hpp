@@ -18,8 +18,7 @@
 class FileSystemClient {
 private:
     struct FileInfo {
-        bool locally_modified;      // True if the local copy has been modified and then if is_changed == true, we push it to the server on close()
-        //bool is_stale;             // this is used when a file on the server is changed. The subscriber thread marks the specific file as stale and the next time when you open the file, we fetch the file from the server to update 
+        bool locally_modified;      // True if the local copy has been modified and then if locally_modified == true, we push it to the server on close()
         int64_t timestamp;    // The last known timestamp from the server
         std::string filename; // The base name of the file
     };

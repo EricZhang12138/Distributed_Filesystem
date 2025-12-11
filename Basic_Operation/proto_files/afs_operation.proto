@@ -80,10 +80,6 @@ message SubscribeRequest {
   // No file_ids here!
 }
 
-message RegisterRequest {
-  string client_id = 1;
-  string file_id = 2;
-}
 
 message Notification {
     string filename = 1;
@@ -93,20 +89,7 @@ message Notification {
     string content = 5;
 }
 
-message RegisterResponse {
-    bool success = 1;
-    string message = 2;      // Optional error message or debug info
-}
 
-message UnregisterRequest {
-    string client_id = 1;
-    string file_id = 2;      // The specific file to stop watching
-}
-
-message UnregisterResponse {
-    bool success = 1;
-    string message = 2;
-}
 
 
 service operators{
@@ -120,8 +103,6 @@ service operators{
     rpc mkdir (MakeDir_request) returns (MakeDir_response);
     rpc unlink (Delete_request) returns (Delete_response);
     rpc Subscribe(SubscribeRequest) returns (stream Notification);
-    rpc RegisterCallback(RegisterRequest) returns (RegisterResponse);
-    rpc UnregisterCallback(UnregisterRequest) returns (UnregisterResponse);
 }
 
 
