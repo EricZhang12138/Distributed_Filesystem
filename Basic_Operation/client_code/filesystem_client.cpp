@@ -324,8 +324,9 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             std::cerr << "Failed to open the local file stream." << std::endl;
             return false;
         }
-        
+        cache_mutex.lock();
         opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+        cache_mutex.unlock();
         std::cout << "File '" << filename << "' is now open for use." << std::endl;
         return true;
     }
@@ -497,7 +498,9 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
         cache_mutex.unlock();
         return false;
     }
+    cache_mutex.lock();
     opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+    cache_mutex.unlock();
 
     FileAttributes attr;
     // We must use stat() from <sys/stat.h> to get all POSIX info
@@ -546,7 +549,9 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
     if (cache_it == cache.end()) {
         cache_mutex.unlock();
         std::cerr << "Error: Inconsistent state. File is open but not in cache." << std::endl;
+        cache_mutex.unlock();
         opened_files.erase(opened_file_it); 
+        cache_mutex.unlock();
         return false;
     }
 
@@ -614,7 +619,9 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
             // Re-open the file handles so the user can retry
             auto read_s = std::make_unique<std::ifstream>(file_location, std::ios::binary);
             auto write_s = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
+            cache_mutex.lock();
             opened_files[file_location] = FileStreams{std::move(read_s), std::move(write_s)};
+            cache_mutex.unlock();
             std::cerr << "File handles have been re-opened. Please try closing again." << std::endl;
             return false; 
         }
@@ -652,7 +659,9 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         std::cout << "File '" << filename << "' was not modified. No flush needed." << std::endl;
     }
 
+    cache_mutex.unlock();
     opened_files.erase(opened_file_it);
+    cache_mutex.unlock();
     
     std::cout << "File '" << filename << "' is now closed." << std::endl;
     return true;
@@ -836,7 +845,9 @@ bool FileSystemClient::delete_file(const std::string& directory){
     auto it_op = opened_files.find(cache_path);
     if (it_op != opened_files.end()){
         // we find it in opened_files
+        cache_mutex.lock();
         opened_files.erase(it_op);   // erase by iterator (O(1))
+        cache_mutex.unlock();
         std::cout << "Delete file: "<< cache_path << "in opened_files";
     }
     
