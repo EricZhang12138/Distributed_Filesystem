@@ -364,7 +364,7 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
             auto m_it = file_mutexes.find(file_location);
             if (m_it == file_mutexes.end()) {
                 cache_mutex.unlock();
-                std::cerr << "No mutex for file: " << file_location << std::endl;
+                std::cerr << "No mutex for file: " << file_location << " when reading"<<std::endl;
                 return false;
             }
             std::mutex& file_mtx = m_it->second;
@@ -420,7 +420,7 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
             auto m_it = file_mutexes.find(file_location);
             if (m_it == file_mutexes.end()) {
                 cache_mutex.unlock();
-                std::cerr << "No mutex for file: " << file_location << std::endl;
+                std::cerr << "No mutex for file: " << file_location << " when writing"<< std::endl;
                 return false;
             }
             std::mutex& file_mtx = m_it->second;
@@ -498,7 +498,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     }
     cache_mutex.unlock();
 
-     // Create the local directory structure if it doesn't exist
+    // Create the local directory structure if it doesn't exist
     
     try {
         std::filesystem::create_directories(cache_dir);;
@@ -512,7 +512,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
         std::cerr << "Error: Failed to create local file at " << file_location << std::endl;
         return false;
     }
-    outfile.close(); 
+    outfile.close();
 
     struct FileInfo file_info{true, 0, filename};
     cache_mutex.lock();
@@ -531,6 +531,8 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     }
     cache_mutex.lock();
     opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+    // Create per-file mutex
+    file_mutexes[file_location];
     cache_mutex.unlock();
 
     FileAttributes attr;
@@ -580,7 +582,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
     auto m_it = file_mutexes.find(file_location);
     if (m_it == file_mutexes.end()) {
         cache_mutex.unlock();
-        std::cerr << "No mutex for file: " << file_location << std::endl;
+        std::cerr << "No mutex for file: " << file_location << " when closing" <<std::endl;
         return false;
     }
     std::mutex& file_mtx = m_it->second;

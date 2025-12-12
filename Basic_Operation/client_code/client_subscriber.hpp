@@ -1,3 +1,4 @@
+
 #ifndef SUBSCRIBER
 #define SUBSCRIBER
 
@@ -64,6 +65,5 @@ void FileSystemClient::RunSubscriber() {
     }
 }
 
-
-
 #endif
+
