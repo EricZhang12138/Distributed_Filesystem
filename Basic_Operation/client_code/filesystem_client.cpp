@@ -10,6 +10,7 @@
 #include <thread>
 
 
+
  
 FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stub_(afs_operation::operators::NewStub(channel)){
     // Generate a universally unique identifier for client ID
@@ -219,6 +220,10 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         }
         cache_mutex.lock();
         opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+        // Create per-file mutex if not present
+        if (file_mutexes.find(file_location) == file_mutexes.end()) {
+            file_mutexes[file_location]; // default-constructs a mutex
+        }
         cache_mutex.unlock();
         return true;
 
@@ -328,6 +333,10 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         }
         cache_mutex.lock();
         opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+        // Create per-file mutex if not present
+        if (file_mutexes.find(file_location) == file_mutexes.end()) {
+            file_mutexes[file_location];
+        }
         cache_mutex.unlock();
         std::cout << "File '" << filename << "' is now open for use." << std::endl;
         return true;
@@ -351,8 +360,17 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
             return false;
         } else {
             auto it = opened_files.find(file_location);
-            std::ifstream& file_stream = *(it->second.read_stream);
+            // Lock per-file mutex for stream access
+            auto m_it = file_mutexes.find(file_location);
+            if (m_it == file_mutexes.end()) {
+                cache_mutex.unlock();
+                std::cerr << "No mutex for file: " << file_location << std::endl;
+                return false;
+            }
+            std::mutex& file_mtx = m_it->second;
             cache_mutex.unlock();
+            std::lock_guard<std::mutex> file_lock(file_mtx);
+            std::ifstream& file_stream = *(it->second.read_stream);
             // read the file from the cache
             file_stream.seekg(offset, std::ios::beg);
             if (!file_stream) {
@@ -398,8 +416,17 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
             return false;
         } else {
             auto it = opened_files.find(file_location);
-            std::ofstream& file_stream = *(it->second.write_stream);
+            // Lock per-file mutex for stream access
+            auto m_it = file_mutexes.find(file_location);
+            if (m_it == file_mutexes.end()) {
+                cache_mutex.unlock();
+                std::cerr << "No mutex for file: " << file_location << std::endl;
+                return false;
+            }
+            std::mutex& file_mtx = m_it->second;
             cache_mutex.unlock();
+            std::lock_guard<std::mutex> file_lock(file_mtx);
+            std::ofstream& file_stream = *(it->second.write_stream);
             file_stream.seekp(position);
             if (file_stream.fail()){
                 std::cerr << "Error: Failed to seek to position " << position << " in " << filename << std::endl; 
@@ -549,12 +576,24 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         std::cerr << "Error: Cannot close '" << filename << "' because it is not open." << std::endl;
         return false;
     }
+    // Lock per-file mutex for stream access
+    auto m_it = file_mutexes.find(file_location);
+    if (m_it == file_mutexes.end()) {
+        cache_mutex.unlock();
+        std::cerr << "No mutex for file: " << file_location << std::endl;
+        return false;
+    }
+    std::mutex& file_mtx = m_it->second;
+    // We must unlock cache_mutex before locking file_mtx to avoid deadlock
     cache_mutex.unlock();
+    std::lock_guard<std::mutex> file_lock(file_mtx);
 
     cache_mutex.lock();
     auto cache_it = cache.find(file_location);
     if (cache_it == cache.end()) {
         opened_files.erase(opened_file_it); 
+        // Remove per-file mutex
+        file_mutexes.erase(file_location);
         cache_mutex.unlock();
         std::cerr << "Error: Inconsistent state. File is open but not in cache." << std::endl;
         return false;
@@ -665,6 +704,8 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
 
     cache_mutex.lock();
     opened_files.erase(opened_file_it);
+    // Remove per-file mutex
+    file_mutexes.erase(file_location);
     cache_mutex.unlock();
     std::cout << "File '" << filename << "' is now closed." << std::endl;
     return true;

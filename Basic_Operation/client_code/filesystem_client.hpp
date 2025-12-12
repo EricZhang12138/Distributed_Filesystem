@@ -14,6 +14,8 @@
 #include <boost/uuid/uuid_io.hpp>
 #include "file_attributes.hpp"
 #include <thread>
+#include <unordered_map>
+#include <mutex>
 
 class FileSystemClient {
 private:
@@ -37,6 +39,7 @@ private:
     std::string client_id;
     std::unique_ptr<grpc::ClientContext> subscriber_context_;
     std::thread subscriber_thread;
+    std::unordered_map<std::string, std::mutex> file_mutexes; // Protects file stream access
     void RunSubscriber();
 
 public:
