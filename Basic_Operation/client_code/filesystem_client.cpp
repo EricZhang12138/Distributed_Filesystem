@@ -227,11 +227,12 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         // Case 2: File IS in the local cache, check for updates
         
         // Check if file is already open by this client
+        cache_mutex.lock();
         if (opened_files.find(file_location)!=opened_files.end()){
             std::cerr<< "The file: " << file_location << "is already open, but it is okay if you try multiple times" << std::endl;
+            cache_mutex.unlock();
             return true;
         }
-        cache_mutex.unlock();
         int64_t timestamp = cache[file_location].timestamp;
         cache_mutex.unlock();
         afs_operation::FileRequest request;
@@ -344,13 +345,14 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
         return false;
     } else {
-        cache_mutex.unlock();
         if (opened_files.find(file_location) == opened_files.end()){
             std::cerr << "File found in cache but it is not opened. Open the file by calling open_file()" << std::endl;
+            cache_mutex.unlock();
             return false;
         } else {
             auto it = opened_files.find(file_location);
             std::ifstream& file_stream = *(it->second.read_stream);
+            cache_mutex.unlock();
             // read the file from the cache
             file_stream.seekg(offset, std::ios::beg);
             if (!file_stream) {
@@ -389,14 +391,15 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
         std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
         return false;
     } else {
-        cache_mutex.unlock();
+        
         if (opened_files.find(file_location) == opened_files.end()){
             std::cerr << "File found in cache but it is not opened. Open the file by calling open_file()" << std::endl;
+            cache_mutex.unlock();
             return false;
         } else {
             auto it = opened_files.find(file_location);
             std::ofstream& file_stream = *(it->second.write_stream);
-
+            cache_mutex.unlock();
             file_stream.seekp(position);
             if (file_stream.fail()){
                 std::cerr << "Error: Failed to seek to position " << position << " in " << filename << std::endl; 
@@ -538,23 +541,25 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
 bool FileSystemClient::close_file(const std::string& filename, const std::string& directory) {
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
-    
+
+    cache_mutex.lock();
     auto opened_file_it = opened_files.find(file_location);
     if (opened_file_it == opened_files.end()) {
+        cache_mutex.unlock();
         std::cerr << "Error: Cannot close '" << filename << "' because it is not open." << std::endl;
         return false;
     }
+    cache_mutex.unlock();
 
     cache_mutex.lock();
     auto cache_it = cache.find(file_location);
     if (cache_it == cache.end()) {
-        cache_mutex.unlock();
-        std::cerr << "Error: Inconsistent state. File is open but not in cache." << std::endl;
-        cache_mutex.unlock();
         opened_files.erase(opened_file_it); 
         cache_mutex.unlock();
+        std::cerr << "Error: Inconsistent state. File is open but not in cache." << std::endl;
         return false;
     }
+    cache_mutex.unlock();
 
     if (cache_it->second.locally_modified) {
 
@@ -652,18 +657,15 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
             } catch (...) {}
         }
         cache_mutex.unlock();
-
-
         std::cout << "File flushed successfully." << std::endl;
     
     } else {
         std::cout << "File '" << filename << "' was not modified. No flush needed." << std::endl;
     }
 
-    cache_mutex.unlock();
+    cache_mutex.lock();
     opened_files.erase(opened_file_it);
     cache_mutex.unlock();
-    
     std::cout << "File '" << filename << "' is now closed." << std::endl;
     return true;
 }
@@ -843,14 +845,17 @@ bool FileSystemClient::delete_file(const std::string& directory){
     std::filesystem::path path(directory);
     
     // we need to clean the the three caches we have 
+    cache_mutex.lock();
     auto it_op = opened_files.find(cache_path);
     if (it_op != opened_files.end()){
         // we find it in opened_files
-        cache_mutex.lock();
         opened_files.erase(it_op);   // erase by iterator (O(1))
         cache_mutex.unlock();
         std::cout << "Delete file: "<< cache_path << "in opened_files";
+    }else{
+        cache_mutex.unlock();
     }
+    
     
     cache_mutex.lock();
     auto it_ca = cache.find(cache_path);
