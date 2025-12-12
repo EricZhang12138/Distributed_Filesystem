@@ -1,4 +1,5 @@
 #include "filesystem_client.hpp"
+#include "client_subscriber.hpp"
 #include <iostream>
 #include <sstream> 
 #include <chrono>
