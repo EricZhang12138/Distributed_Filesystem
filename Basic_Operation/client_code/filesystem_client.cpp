@@ -36,14 +36,14 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
     }
 
     // set up the subscribe channel to the server
-    RunSubscriber();
-
-    
+    // non static member function needs the object to call it on. So we need this
+    // also we pass the pointer to the member function to the thread
+    std::thread t_sub(&FileSystemClient::RunSubscriber, this);
 }
 
 
 FileSystemClient::~FileSystemClient(){
-    // 1. stop the thread using subscriber_context
+    // stop the thread using subscriber_context
     if (subscriber_context_){
         subscriber_context_ -> TryCancel();
     }

@@ -193,7 +193,6 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     return grpc::Status::OK;
 }
 
-
 grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operation::FileRequest* request, grpc::ServerWriter< ::afs_operation::FileResponse>* writer) {
     std::string filename = request->filename();
     int64_t timestamp = request -> timestamp();

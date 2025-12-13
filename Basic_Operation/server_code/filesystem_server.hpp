@@ -10,19 +10,26 @@
 #include <grpcpp/server_builder.h>
 #include "afs_operation.grpc.pb.h"
 #include "afs_operation.pb.h"
-#include "FID.hpp"  // fileID representation
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <mutex>
 
 
 class FileSystem final : public afs_operation::operators::Service{
 
 public: 
-    std::string root_dir;           // = "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
+    std::string root_dir;           // "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
     int starting_length;
-    std::unordered_map<FID, std::string> file_map;
+    std::mutex file_map_mutex;
+    std::unordered_map<std::string, std::vector<std::string>> file_map; // a map of file directories to a vector of userIDs
     void RunServer();
     FileSystem(std::string root_dir);
 private:
-    std::unordered_set<std::string> clients_db;
+    std::thread callback_thread;
+
+    std::mutex client_db_mutex;
+    std::unordered_set<std::string> clients_db; // A list of all the clients that is currently connected to the server (For debugging purposes)
 
     grpc::Status request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) override;
 
