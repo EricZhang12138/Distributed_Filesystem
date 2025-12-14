@@ -35,10 +35,12 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stu
         std::cerr << "Client initialized. Server root directory: " << this->server_root_path_ << std::endl; 
     }
 
+    subscriber_context_ = std::make_unique<grpc::ClientContext>();
+
     // set up the subscribe channel to the server
     // non static member function needs the object to call it on. So we need this
     // also we pass the pointer to the member function to the thread
-    std::thread t_sub(&FileSystemClient::RunSubscriber, this);
+    subscriber_thread = std::thread(&FileSystemClient::RunSubscriber, this);
 }
 
 

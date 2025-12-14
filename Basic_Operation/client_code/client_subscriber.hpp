@@ -5,12 +5,11 @@
 #include "filesystem_client.hpp"
 
 void FileSystemClient::RunSubscriber() {
-    grpc::ClientContext context;
     afs_operation::SubscribeRequest request;
     request.set_client_id(client_id);
 
     std::unique_ptr<grpc::ClientReader<afs_operation::Notification>> reader(
-        stub_->Subscribe(&context, request));
+        stub_->Subscribe(subscriber_context_.get(), request));
 
     if (!reader) {
         std::cerr << "ERROR: Failed to create subscription reader" << std::endl;
