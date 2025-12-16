@@ -1,9 +1,11 @@
 #include "filesystem_server.hpp" 
+#include "subscriber_handler.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <chrono> // For timestamp logic
 #include <sys/stat.h> // For getting the stats 
+
 
 
 
@@ -21,7 +23,7 @@ int64_t get_file_timestamp(const std::string& path) {
         int64_t timestamp = (static_cast<int64_t>(s.st_mtim.tv_sec) * 1000000000LL) 
                         + s.st_mtim.tv_nsec;
     #endif
-        
+
     return timestamp;
 }
 
@@ -105,7 +107,6 @@ grpc::Status FileSystem::request_dir(grpc::ServerContext* context, const afs_ope
         }else{
             std::cout << "Client ID already exists, please retry later ...." << std::endl;
         }
-
         return grpc::Status::OK;
     }else{
         std::cerr << "There is an error while passing the input/output files directory"<<std::endl;
@@ -119,6 +120,13 @@ grpc::Status FileSystem::open(grpc::ServerContext* context, const afs_operation:
     std::string directory = request -> directory();
     std::cout << "Client wants " << directory<<(directory.back()=='/'? "" : "/")<<filename << std::endl;
     std::string path = directory + (directory.back()=='/'? "" : "/") + filename;
+
+    std::string client_id = request->client_id();
+    // update the file_map
+    {
+        std::lock_guard<std::mutex> lock(file_map_mutex);
+        file_map[path].insert(client_id); // add the path to the map and add the corresponding client
+    }
 
     // have to read the file in binary mode to avoid line ending translation
     std::ifstream file(path, std::ios::binary);

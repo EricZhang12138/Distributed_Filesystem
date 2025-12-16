@@ -12,6 +12,7 @@ message MakeDir_response{
 
 message Delete_request{
     string directory = 1;
+    string client_id = 2;
 }
 message Delete_response{
     bool success = 1;
@@ -22,6 +23,7 @@ message RenameRequest {                // for rename calls
     string new_filename = 2; // New name
     string directory = 3;
     string new_directory = 4;
+    string client_id = 5;
 }
 
 message RenameResponse {
@@ -41,6 +43,7 @@ message FileRequest {
     int64 timestamp = 2;
     bytes content = 3;
     string directory = 4;
+    string client_id = 5;
 }
 
 message FileResponse {
@@ -102,7 +105,7 @@ service operators{
     rpc rename (RenameRequest) returns (RenameResponse);
     rpc mkdir (MakeDir_request) returns (MakeDir_response);
     rpc unlink (Delete_request) returns (Delete_response);
-    rpc Subscribe(SubscribeRequest) returns (stream Notification);
+    rpc subscribe(SubscribeRequest) returns (stream Notification);
 }
 
 

@@ -9,7 +9,7 @@ void FileSystemClient::RunSubscriber() {
     request.set_client_id(client_id);
 
     std::unique_ptr<grpc::ClientReader<afs_operation::Notification>> reader(
-        stub_->Subscribe(subscriber_context_.get(), request));
+        stub_->subscribe(subscriber_context_.get(), request));
 
     if (!reader) {
         std::cerr << "ERROR: Failed to create subscription reader" << std::endl;

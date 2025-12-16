@@ -145,6 +145,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         afs_operation::FileRequest request;
         request.set_filename(filename);
         request.set_directory(resolved_path);
+        request.set_client_id(client_id);
         
         std::string file_path = file_location; // Use the full file_location path
         
@@ -246,6 +247,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         request.set_filename(filename);
         request.set_timestamp(timestamp);
         request.set_directory(resolved_path); 
+        request.set_client_id(client_id);
 
         int num_of_retries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
@@ -651,6 +653,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
                 request.set_directory(resolved_path);
                 request.set_filename(filename);
                 request.set_content(buffer, len);
+                request.set_client_id(client_id);
 
                 if (!writer->Write(request)){
                     break;
@@ -834,6 +837,7 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
     request.set_filename(from_name);
     request.set_directory(resolved_path);
     request.set_new_directory(resolved_path_new);
+    request.set_client_id(client_id);
 
     grpc::Status status = stub_ -> rename(&context, request, &response);
 
@@ -926,6 +930,7 @@ bool FileSystemClient::delete_file(const std::string& directory){
     afs_operation::Delete_request request;
     afs_operation::Delete_response response;
     request.set_directory(resolved_path);
+    request.set_client_id(client_id);
     grpc::Status status = stub_ -> unlink(&context, request, &response);
     if (!status.ok()){
         std::cout << "Directory Deletion Failed: " << status.error_message() << std::endl;
