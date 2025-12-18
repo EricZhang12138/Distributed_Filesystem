@@ -27,6 +27,43 @@ int64_t get_file_timestamp(const std::string& path) {
     return timestamp;
 }
 
+// when a client disconnects, we need to clean up the maps on the server which contained info about the client
+// this is called when the subscribe() method ends
+void FileSystem::cleanup_client(const std::string& client_id) {
+    std::cout << "Cleaning up client: " << client_id << std::endl;
+    
+    // Remove from client_db
+    {
+        std::lock_guard<std::mutex> lock(client_db_mutex);
+        clients_db.erase(client_id);
+    }
+    
+    // Remove from file_map
+    {
+        std::lock_guard<std::mutex> lock(file_map_mutex);
+        for (auto it = file_map.begin(); it != file_map.end(); ) {
+            it->second.erase(client_id);
+            // Optionally remove empty entries
+            if (it->second.empty()) {
+                it = file_map.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    
+    // Remove from subscribers and signal shutdown
+    {
+        std::lock_guard<std::mutex> lock(subscriber_mutex);
+        auto it = subscribers.find(client_id);
+        if (it != subscribers.end()) {
+            it->second->cancel();  // Signal the queue to shutdown
+            subscribers.erase(it);
+        }
+    }
+    
+    std::cout << "Client " << client_id << " cleanup complete" << std::endl;
+}
 
 
 // REPLACE the entire getattr function with this:
@@ -120,7 +157,7 @@ grpc::Status FileSystem::open(grpc::ServerContext* context, const afs_operation:
     std::string directory = request -> directory();
     std::cout << "Client wants " << directory<<(directory.back()=='/'? "" : "/")<<filename << std::endl;
     std::string path = directory + (directory.back()=='/'? "" : "/") + filename;
-
+    // this client is registering its interest
     std::string client_id = request->client_id();
     // update the file_map
     {

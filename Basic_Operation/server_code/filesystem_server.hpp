@@ -34,7 +34,7 @@ struct NotificationQueue{
     bool pop(afs_operation::Notification& notif){
         std::unique_lock<std::mutex> lock(mu); // unique_lock is a lock management object similar to lock_guard
         cv.wait(lock, [this](){return !queue.empty() || shutdown;});
-
+        // if the thread goes to sleep with cv.wait, it has to be woken up by notify_one or notify_all to check the condition again
         if (shutdown && queue.empty()) return false; // graceful shutdown benefitting from the cancel() function
         
         notif = queue.front();
@@ -68,6 +68,8 @@ private:
 
     std::mutex client_db_mutex;
     std::unordered_set<std::string> clients_db; // A list of all the clients that is currently connected to the server (For debugging purposes)
+
+    void cleanup_client(const std::string& client_id);
 
     grpc::Status request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) override;
 
