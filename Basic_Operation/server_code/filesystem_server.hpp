@@ -45,7 +45,6 @@ struct NotificationQueue{
         std::lock_guard<std::mutex> lock(mu);
         shutdown = true; 
         cv.notify_all(); // wake up all the threads and then they return false in pop() for a graceful shutdown 
-
     }
 };
 
@@ -68,6 +67,12 @@ private:
 
     std::mutex client_db_mutex;
     std::unordered_set<std::string> clients_db; // A list of all the clients that is currently connected to the server (For debugging purposes)
+
+    bool file_change_callback_close(const std::string& path, const std::string& client_id, afs_operation::Notification& notif); // implement tomorrow 
+
+    bool file_change_callback_rename(const std::string& path, const std::string& new_path, const std::string& client_id, afs_operation::Notification& notif);
+
+    bool file_change_callback_unlink(const std::string& path, const std::string& client_id, afs_operation::Notification& notif);
 
     void cleanup_client(const std::string& client_id);
 

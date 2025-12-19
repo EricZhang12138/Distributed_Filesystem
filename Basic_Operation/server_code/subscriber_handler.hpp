@@ -37,7 +37,7 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
 
 
     afs_operation::Notification note;
-    while (queue->pop(note)){                           // this keeps returning true unless shutdown + queue empty
+    while(queue->pop(note)){                           // this keeps returning true unless shutdown + queue empty
         // If Write fails (client disconnected), we break the loop
         if (!writer->Write(note)) {
             std::cout << "Client disconnected: " << client_id << std::endl;
@@ -45,14 +45,11 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
         }
     }
 
+    // clean up the three maps: file_map, client_db, subscribers
     cleanup_client(client_id);
     
     return grpc::Status::OK;
 }
-
-
-
-
 
 
 #endif 

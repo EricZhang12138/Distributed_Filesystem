@@ -89,7 +89,6 @@ message Notification {
     string directory = 2;    // Useful to distinguish files with same name in different folders
     string message = 3;      // e.g. "UPDATE", "DELETE", "RENAME"
     int64 timestamp = 4;     // The last time the file was changed recorded on the server to update the version of the file in cache
-    string content = 5;
 }
 
 

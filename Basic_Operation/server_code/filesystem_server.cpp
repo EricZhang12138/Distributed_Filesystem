@@ -27,6 +27,96 @@ int64_t get_file_timestamp(const std::string& path) {
     return timestamp;
 }
 
+// this is called in close()
+bool FileSystem::file_change_callback_close(const std::string& path, const std::string& client_id, afs_operation::Notification& notif){
+    // close() is called
+    {
+        std::lock_guard<std::mutex> lock_file_map(file_map_mutex);
+        auto it = file_map.find(path);
+        if (it != file_map.end()){  // we find the path entry in the file_map
+            std::unordered_set<std::string> client_set = it -> second;
+            {
+                std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
+                for (const std::string client: client_set){ // iterate through the client_set and update all of them
+                    if (client == client_id) continue; // skip the client that initiated the rename
+                    // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
+                    std::shared_ptr<NotificationQueue> notif_queue = subscribers[client];
+                    // push to the producer worker queue
+                    notif_queue -> push(notif); 
+                }
+            }
+        }else{// this may mean that we created the file on the client and we have not registered it on the maps
+            { // register this file path and the client id in file_map
+            std::lock_guard<std::mutex> lock(file_map_mutex);
+            file_map[path].insert(client_id); // add the path to the map and add the corresponding client
+            }
+        }
+    }
+}
+
+
+bool FileSystem::file_change_callback_rename(const std::string& old_path, const std::string& new_path, const std::string& client_id, afs_operation::Notification& notif){
+    // rename() is called
+    {
+        std::lock_guard<std::mutex> lock_file_map(file_map_mutex);
+        auto it = file_map.find(old_path);
+        if (it != file_map.end()){  // we find the old_path entry in the file_map
+            std::unordered_set<std::string> client_set = it->second;
+            {
+                std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
+                for (const std::string& client: client_set){ // iterate through the client_set and update all of them
+                    if (client == client_id) continue; // skip the client that initiated the rename
+                    
+                    // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
+                    auto queue_it = subscribers.find(client);
+                    if (queue_it != subscribers.end()) {
+                        std::shared_ptr<NotificationQueue> notif_queue = queue_it->second;
+                        // push to the producer worker queue
+                        notif_queue->push(notif); 
+                    }
+                }
+            }
+            // Update the file_map: move clients from old_path to new_path
+            file_map[new_path] = client_set;
+            file_map.erase(it);
+        } else {
+            // If old_path is not in the map, just register the new_path with the client
+            std::lock_guard<std::mutex> lock(file_map_mutex);
+            file_map[new_path].insert(client_id);
+        }
+    }
+    return true;
+}
+
+bool FileSystem::file_change_callback_unlink(const std::string& path, const std::string& client_id, afs_operation::Notification& notif){
+    // unlink() is called - notify all clients watching this file
+    {
+        std::lock_guard<std::mutex> lock_file_map(file_map_mutex);
+        auto it = file_map.find(path);
+        if (it != file_map.end()){  // we find the path entry in the file_map
+            std::unordered_set<std::string> client_set = it->second;
+            {
+                std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
+                for (const std::string& client: client_set){ // iterate through the client_set and update all of them
+                    if (client == client_id) continue; // skip the client that initiated the unlink
+                    
+                    // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
+                    auto queue_it = subscribers.find(client);
+                    if (queue_it != subscribers.end()) {
+                        std::shared_ptr<NotificationQueue> notif_queue = queue_it->second;
+                        // push to the producer worker queue
+                        notif_queue->push(notif); 
+                    }
+                }
+            }
+            // Remove the file from file_map since it no longer exists
+            file_map.erase(it);
+        }
+    }
+    return true;
+}
+
+
 // when a client disconnects, we need to clean up the maps on the server which contained info about the client
 // this is called when the subscribe() method ends
 void FileSystem::cleanup_client(const std::string& client_id) {
@@ -205,6 +295,7 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     afs_operation::FileRequest request;
     std::string filename;
     std::string path;
+    std::string client_id;
 
     std::ofstream outfile;
 
@@ -222,19 +313,32 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
             }
         }
         outfile.write(request.content().data(), request.content().size());
+        client_id = request.client_id();
     }
 
-    if(outfile.is_open()) outfile.close();
 
+
+    if(outfile.is_open()) outfile.close();
+    
     // Check if path is empty, which happens if no messages were received
     if (path.empty()) {
         std::cerr << "Close RPC received no file data." << std::endl;
         return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "No file data received.");
     }
 
-// Get the new authoritative timestamp generated by the OS after the write
+    // Get the new authoritative timestamp generated by the OS after the write
     int64_t timestamp_server = get_file_timestamp(path);
     response->set_timestamp(timestamp_server);
+
+
+    // generate the Notification object that we are gonna use to pass to all related clients 
+    afs_operation::Notification notif; 
+    notif.set_filename(filename);
+    notif.set_directory(request.directory());
+    notif.set_message("UPDATE");
+    notif.set_timestamp(timestamp_server);
+    // then we start updating the maps for the specific file
+
     return grpc::Status::OK;
 }
 
