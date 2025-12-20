@@ -18,9 +18,9 @@ void FileSystemClient::RunSubscriber() {
 
     afs_operation::Notification note;
     while (reader->Read(&note)) {          // execution blocks here and the while loop won't be executed until a notification arrives
-        std::cout << "NOTIFICATION RECEIVED: " << note.message() << " for " << note.filename() << std::endl;
+        std::cout << "NOTIFICATION RECEIVED: " << note.message() << " for " << note.directory() << std::endl;
 
-        std::string path_on_server = note.directory() + (note.directory().back() == '/' ? "" : "/") + note.filename();
+        std::string path_on_server = note.directory() + (note.directory().back() == '/' ? "" : "/");
         std::string path_on_client = std::string("./tmp/cache") + (path_on_server.front()=='/'? "" : "/") + path_on_server;
 
         if (note.message() == "UPDATE") {

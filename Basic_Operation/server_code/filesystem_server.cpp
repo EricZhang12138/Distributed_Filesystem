@@ -39,10 +39,13 @@ bool FileSystem::file_change_callback_close(const std::string& path, const std::
                 std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
                 for (const std::string client: client_set){ // iterate through the client_set and update all of them
                     if (client == client_id) continue; // skip the client that initiated the rename
-                    // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
-                    std::shared_ptr<NotificationQueue> notif_queue = subscribers[client];
-                    // push to the producer worker queue
-                    notif_queue -> push(notif); 
+                    auto queue_it = subscribers.find(client);
+                    if (queue_it != subscribers.end()) {
+                        // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
+                        std::shared_ptr<NotificationQueue> notif_queue = queue_it->second;
+                        // push to the producer worker queue
+                        notif_queue->push(notif); 
+                    }
                 }
             }
         }else{// this may mean that we created the file on the client and we have not registered it on the maps
@@ -52,6 +55,7 @@ bool FileSystem::file_change_callback_close(const std::string& path, const std::
             }
         }
     }
+    return true;
 }
 
 
@@ -333,11 +337,11 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
 
     // generate the Notification object that we are gonna use to pass to all related clients 
     afs_operation::Notification notif; 
-    notif.set_filename(filename);
-    notif.set_directory(request.directory());
+    notif.set_directory(path);
     notif.set_message("UPDATE");
     notif.set_timestamp(timestamp_server);
     // then we start updating the maps for the specific file
+    file_change_callback_close(path, client_id, notif);
 
     return grpc::Status::OK;
 }
@@ -479,6 +483,7 @@ grpc::Status FileSystem::mkdir(grpc::ServerContext* context, const afs_operation
 grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operation::RenameRequest* request, afs_operation::RenameResponse* response) {
     std::string directory = request->directory();
     std::string directory_new = request -> new_directory();
+    std::string client_id = request -> client_id();
     // Handle root dir logic
     std::string s_dir = directory + (directory.back() == '/' ? "" : "/");
     std::string s_dir_new = directory_new + (directory_new.back() == '/' ? "" : "/");
@@ -493,6 +498,15 @@ grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operatio
         std::filesystem::create_directories(std::filesystem::path(new_path).parent_path());
 
         std::filesystem::rename(old_path, new_path);
+        afs_operation::Notification notif;
+        notif.set_message("Rename");
+        notif.set_new_directory(new_path);
+        notif.set_directory(old_path);
+
+        int64_t timestamp = get_file_timestamp(new_path);
+        notif.set_timestamp(timestamp);
+        file_change_callback_rename(old_path,new_path,client_id,notif);
+
         std::cout << "Server Renamed: " << request->filename() << " -> " << request->new_filename() << std::endl;
         response->set_success(true);
         return grpc::Status::OK;
@@ -507,8 +521,14 @@ grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operatio
 
 grpc::Status FileSystem::unlink(grpc::ServerContext* context, const afs_operation::Delete_request* request, afs_operation::Delete_response* response){
     std::string directory = request -> directory();
+    std::string client_id = request -> client_id();
     std::error_code ec;
     if (std::filesystem::remove(directory, ec)) {
+        // now generate the notif message
+        afs_operation::Notification notif;
+        notif.set_directory(request -> directory());
+        notif.set_message("DELETE");
+        file_change_callback_unlink(directory, client_id, notif);
         std::cout << "File deleted successfully on the server at: " << directory << std::endl;
     } else {
         if (ec){
