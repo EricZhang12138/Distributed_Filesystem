@@ -160,7 +160,7 @@ void FileSystem::cleanup_client(const std::string& client_id) {
 }
 
 
-// REPLACE the entire getattr function with this:
+
 grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operation::GetAttrRequest* request, afs_operation::GetAttrResponse* response) {
     std::string directory = request->directory();
     std::string filename = request->filename();
@@ -346,7 +346,7 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     return grpc::Status::OK;
 }
 
-grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operation::FileRequest* request, grpc::ServerWriter< ::afs_operation::FileResponse>* writer) {
+/*grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operation::FileRequest* request, grpc::ServerWriter< ::afs_operation::FileResponse>* writer) {
     std::string filename = request->filename();
     int64_t timestamp = request -> timestamp();
     std::string path = request->directory() + (request->directory().back()=='/'? "" : "/") + request->filename();
@@ -400,7 +400,7 @@ grpc::Status FileSystem::compare(grpc::ServerContext* context, const afs_operati
         // This could also be NOT_FOUND if the file doesn't exist
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found on server for compare.");
     }
-}
+}*/
 
 
 grpc::Status FileSystem::ls(grpc::ServerContext* context, const afs_operation::ListDirectoryRequest* request, afs_operation::ListDirectoryResponse* response){

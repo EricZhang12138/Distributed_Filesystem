@@ -39,7 +39,7 @@ private:
     std::string client_id;
     std::unique_ptr<grpc::ClientContext> subscriber_context_;
     std::thread subscriber_thread;
-    std::unordered_map<std::string, std::mutex> file_mutexes; // Protects file stream access
+    std::unordered_map<std::string, std::shared_ptr<std::mutex>> file_mutexes; // Protects file stream access
     void RunSubscriber();
 
 public:

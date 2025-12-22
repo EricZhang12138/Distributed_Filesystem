@@ -225,12 +225,45 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
         // Create per-file mutex if not present
         if (file_mutexes.find(file_location) == file_mutexes.end()) {
-            file_mutexes[file_location]; // default-constructs a mutex
+            file_mutexes[file_location] = std::make_shared<std::mutex>(); // default-constructs a mutex
         }
         cache_mutex.unlock();
         return true;
 
-    } else { 
+    }else {
+        // found the file in cache
+        cache_mutex.unlock();
+        cache_mutex.lock();
+        if (opened_files.find(file_location) != opened_files.end()){
+            std::cout << "The file: " << file_location << " is already open" << std::endl;
+            cache_mutex.unlock();
+            return true;
+        }
+        cache_mutex.unlock();
+        // File is in cache but not open - just open the streams
+        // No need to compare with server since subscriber invalidates cache when needed
+        std::cout << "File: " << file_location << " found in cache, opening..." << std::endl;
+
+        auto read_stream = std::make_unique<std::ifstream>(file_location, std::ios::binary);
+        auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
+
+        if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
+            std::cerr << "Failed to open the local file stream for: " << file_location << std::endl;
+            return false;
+        }
+
+        cache_mutex.lock();
+        opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
+        if (file_mutexes.find(file_location) == file_mutexes.end()) {
+            file_mutexes[file_location] = std::make_shared<std::mutex>();
+        }
+        cache_mutex.unlock();
+        std::cout << "File '" << filename << "' is now open for use." << std::endl;
+        return true;
+
+    }
+    
+    /*else { 
         cache_mutex.unlock();
         // Case 2: File IS in the local cache, check for updates
         
@@ -344,7 +377,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         cache_mutex.unlock();
         std::cout << "File '" << filename << "' is now open for use." << std::endl;
         return true;
-    }
+    }*/
 }
 
 bool FileSystemClient::read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer){
@@ -371,9 +404,9 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
                 std::cerr << "No mutex for file: " << file_location << " when reading"<<std::endl;
                 return false;
             }
-            std::mutex& file_mtx = m_it->second;
+            std::shared_ptr<std::mutex> file_mtx = m_it->second;
             cache_mutex.unlock();
-            std::lock_guard<std::mutex> file_lock(file_mtx);
+            std::lock_guard<std::mutex> file_lock(*file_mtx);
             std::ifstream& file_stream = *(it->second.read_stream);
             // read the file from the cache
             file_stream.seekg(offset, std::ios::beg);
@@ -427,9 +460,9 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
                 std::cerr << "No mutex for file: " << file_location << " when writing"<< std::endl;
                 return false;
             }
-            std::mutex& file_mtx = m_it->second;
+            std::shared_ptr<std::mutex> file_mtx = m_it->second;
             cache_mutex.unlock();
-            std::lock_guard<std::mutex> file_lock(file_mtx);
+            std::lock_guard<std::mutex> file_lock(*file_mtx);
             std::ofstream& file_stream = *(it->second.write_stream);
             file_stream.seekp(position);
             if (file_stream.fail()){
@@ -536,7 +569,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     cache_mutex.lock();
     opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
     // Create per-file mutex
-    file_mutexes[file_location];
+    file_mutexes[file_location] = std::make_shared<std::mutex>();
     cache_mutex.unlock();
 
     FileAttributes attr;
@@ -575,51 +608,56 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
-    cache_mutex.lock();
+    // 1. Lock Global State
+    std::unique_lock<std::mutex> global_lock(cache_mutex);
+
     auto opened_file_it = opened_files.find(file_location);
     if (opened_file_it == opened_files.end()) {
-        cache_mutex.unlock();
         std::cerr << "Error: Cannot close '" << filename << "' because it is not open." << std::endl;
         return false;
     }
-    // Lock per-file mutex for stream access
+
     auto m_it = file_mutexes.find(file_location);
     if (m_it == file_mutexes.end()) {
-        cache_mutex.unlock();
-        std::cerr << "No mutex for file: " << file_location << " when closing" <<std::endl;
+        std::cerr << "No mutex for file: " << file_location << " when closing" << std::endl;
         return false;
     }
-    std::mutex& file_mtx = m_it->second;
-    // We must unlock cache_mutex before locking file_mtx to avoid deadlock
-    cache_mutex.unlock();
-    std::lock_guard<std::mutex> file_lock(file_mtx);
+    // Copy shared_ptr so mutex stays alive even if erased from map
+    std::shared_ptr<std::mutex> file_mtx = m_it->second;
 
-    cache_mutex.lock();
     auto cache_it = cache.find(file_location);
     if (cache_it == cache.end()) {
         opened_files.erase(opened_file_it); 
-        // Remove per-file mutex
         file_mutexes.erase(file_location);
-        cache_mutex.unlock();
         std::cerr << "Error: Inconsistent state. File is open but not in cache." << std::endl;
         return false;
     }
-    cache_mutex.unlock();
 
-    if (cache_it->second.locally_modified) {
 
+    bool needs_flush = cache_it->second.locally_modified;
+    std::ofstream* write_stream_ptr = opened_file_it->second.write_stream.get();
+    std::ifstream* read_stream_ptr = opened_file_it->second.read_stream.get();
+
+
+    // 2. Unlock Global Mutex (Prevent freezing the whole client during upload)
+    global_lock.unlock(); 
+
+    // 3. Lock File Mutex (Prevent local modification during upload)
+    std::lock_guard<std::mutex> file_lock(*file_mtx);
+
+    if (needs_flush) {
         std::cout << "File '" << filename << "' was modified. Flushing to server..." << std::endl;
 
-        std::ofstream& write_stream = *(opened_file_it->second.write_stream);
-        write_stream.flush();
-        if(write_stream.fail()) {
+        // Use the SAVED pointer
+        write_stream_ptr->flush();
+        if(write_stream_ptr->fail()) {
             std::cerr << "Error: Failed to flush write stream before closing." << std::endl;
             return false;
         }
         
-        // We must close the streams before we can reliably read the file
-        opened_file_it->second.read_stream->close();
-        opened_file_it->second.write_stream->close();
+        // Close streams to release OS locks
+        read_stream_ptr->close();
+        write_stream_ptr->close();
 
         // Now open a new read stream for uploading
         std::ifstream file_stream(file_location, std::ios::binary);
@@ -635,6 +673,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         int num_of_tries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
         
+        // RPC Loop
         while (num_of_tries < 3 && !status.ok()){
             grpc::ClientContext context;     
             std::unique_ptr<grpc::ClientWriter<afs_operation::FileRequest>> writer(
@@ -663,57 +702,50 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
             status = writer->Finish();
             num_of_tries ++;
         }
-        
-        file_stream.close(); // Close the temporary read stream
+        file_stream.close();
 
         if (!status.ok()) {
             std::cerr << "RPC failed while flushing file to server: " << status.error_message() << std::endl;
-            // Re-open the file handles so the user can retry
-            auto read_s = std::make_unique<std::ifstream>(file_location, std::ios::binary);
-            auto write_s = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
-            cache_mutex.lock();
-            opened_files[file_location] = FileStreams{std::move(read_s), std::move(write_s)};
-            cache_mutex.unlock();
-            std::cerr << "File handles have been re-opened. Please try closing again." << std::endl;
             return false; 
         }
 
+        // 4. Update Metadata (MUST Re-Lock Global)
+        global_lock.lock();
 
-        // 1. Get the authoritative time from the server (e.g., 1710000000000000000 ns)
-        int64_t server_nanos = response.timestamp();
-
-        // 2. Update internal cache for 'compare' logic (Keep precision!)
-        cache_it->second.timestamp = server_nanos; 
-        cache_it->second.locally_modified = false; // this has to be updated otherwise next time close_file is called, it will try to upload again
-        cache_mutex.unlock();
-        // 3. Update FUSE attributes (Convert to Seconds for the OS)
-        // integer division removes the extra zeros
+        // SAFETY: We must find the cache entry again. 
+        // The old 'cache_it' is invalid because we unlocked the mutex earlier.
+        auto fresh_cache_it = cache.find(file_location);
+        if (fresh_cache_it != cache.end()) {
+            fresh_cache_it->second.timestamp = response.timestamp();
+            fresh_cache_it->second.locally_modified = false;
+        }
         
         std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
-
-        cache_mutex.lock();
         auto attr_it = cached_attr.find(file_loca_server);
         if (attr_it != cached_attr.end()) {
-            attr_it->second.mtime = server_nanos; // Now 'ls -l' shows the correct time!
-            attr_it->second.ctime = server_nanos;
-            
-            // Also update the size, because you just wrote data!
-            try {
-                attr_it->second.size = std::filesystem::file_size(file_location);
+            attr_it->second.mtime = response.timestamp();
+            attr_it->second.ctime = response.timestamp();
+            try { 
+                attr_it->second.size = std::filesystem::file_size(file_location); 
             } catch (...) {}
         }
-        cache_mutex.unlock();
+
         std::cout << "File flushed successfully." << std::endl;
-    
+        
+        // global_lock is still held here, ready for erase
     } else {
         std::cout << "File '" << filename << "' was not modified. No flush needed." << std::endl;
+        // Re-lock to perform erasure
+        global_lock.lock();
     }
 
-    cache_mutex.lock();
-    opened_files.erase(opened_file_it);
-    // Remove per-file mutex
+    // 5. Final Cleanup
+    // We erase by KEY, which is safer than using the old (potentially stale) iterator
+    opened_files.erase(file_location);
     file_mutexes.erase(file_location);
-    cache_mutex.unlock();
+    
+    // global_lock unlocks automatically when function returns
+    
     std::cout << "File '" << filename << "' is now closed." << std::endl;
     return true;
 }
@@ -891,39 +923,41 @@ bool FileSystemClient::make_directory(const std::string& directory, const uint32
 bool FileSystemClient::delete_file(const std::string& directory){
     std::string resolved_path = resolve_server_path(directory);
     std::string cache_path = std::string("./tmp/cache") + (resolved_path[0] == '/'? "" : "/" ) + resolved_path;
+    if (cache_path.back() == '/') cache_path.pop_back();
     std::filesystem::path path(directory);
     
+    std::unique_lock<std::mutex> global_lock(cache_mutex);
+    // Check if file is currently being uploaded/closed by another thread
+    if (file_mutexes.count(cache_path)) {
+        std::shared_ptr<std::mutex> file_mtx = file_mutexes[cache_path];
+        global_lock.unlock();             // Unlock global
+        std::lock_guard<std::mutex> lock(*file_mtx); // Wait for the file to be free
+        global_lock.lock();               // Re-lock global
+    }
     // we need to clean the the three caches we have 
-    cache_mutex.lock();
     auto it_op = opened_files.find(cache_path);
     if (it_op != opened_files.end()){
         // we find it in opened_files
+        if(it_op->second.read_stream) it_op->second.read_stream->close();
+        if(it_op->second.write_stream) it_op->second.write_stream->close();
         opened_files.erase(it_op);   // erase by iterator (O(1))
-        cache_mutex.unlock();
         std::cout << "Delete file: "<< cache_path << "in opened_files";
-    }else{
-        cache_mutex.unlock();
     }
     
-    
-    cache_mutex.lock();
     auto it_ca = cache.find(cache_path);
     if (it_ca != cache.end()){
         cache.erase(it_ca);
-        cache_mutex.unlock();
         std::cout << "Delete file in: "<< cache_path << "in cache";
-    }else{
-        cache_mutex.unlock();
     }
     
 
-    cache_mutex.lock();
     auto it_attr = cached_attr.find(resolved_path);
     if (it_attr != cached_attr.end()){
         cached_attr.erase(it_attr);
         std::cout << "Delete file in: "<< resolved_path << "in cached_attr";
     }
-    cache_mutex.unlock();
+    file_mutexes.erase(cache_path);
+    global_lock.unlock();
 
     // And then we actually delete the files physically
     grpc::ClientContext context;

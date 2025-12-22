@@ -99,7 +99,7 @@ service operators{
     rpc request_dir (InitialiseRequest) returns (InitialiseResponse);
     rpc open (FileRequest) returns (stream FileResponse);
     rpc close (stream FileRequest) returns (FileResponse);
-    rpc compare (FileRequest) returns (stream FileResponse);
+    //rpc compare (FileRequest) returns (stream FileResponse);
     rpc ls (ListDirectoryRequest) returns (ListDirectoryResponse);
     rpc getattr (GetAttrRequest) returns (GetAttrResponse);
     rpc rename (RenameRequest) returns (RenameResponse);
