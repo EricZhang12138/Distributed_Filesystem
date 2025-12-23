@@ -126,7 +126,7 @@ std::optional<FileAttributes> FileSystemClient::get_attributes(const std::string
 bool FileSystemClient::open_file(std::string filename, std::string path){
     std::string resolved_path = resolve_server_path(path);
     std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
-    
+
     std::string cache_dir = "./tmp/cache" + resolved_path; // Use resolved_path
     std::string file_location = cache_dir + (cache_dir.back() == '/' ? "" : "/") + filename;
     
@@ -381,7 +381,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 }
 
 bool FileSystemClient::read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer){
-    
+
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
@@ -605,6 +605,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
 
 
 bool FileSystemClient::close_file(const std::string& filename, const std::string& directory) {
+
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
@@ -650,6 +651,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
 
         // Use the SAVED pointer
         write_stream_ptr->flush();
+        
         if(write_stream_ptr->fail()) {
             std::cerr << "Error: Failed to flush write stream before closing." << std::endl;
             return false;
@@ -658,7 +660,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         // Close streams to release OS locks
         read_stream_ptr->close();
         write_stream_ptr->close();
-
+        std::cout << "Can you pass here 1" << std::endl;
         // Now open a new read stream for uploading
         std::ifstream file_stream(file_location, std::ios::binary);
         if (!file_stream.is_open()) {
@@ -672,7 +674,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         afs_operation::FileResponse response; 
         int num_of_tries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
-        
+        std::cout << "Can you pass here 2" << std::endl;
         // RPC Loop
         while (num_of_tries < 3 && !status.ok()){
             grpc::ClientContext context;     
@@ -680,14 +682,18 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
                 stub_->close(&context, &response)
             );
             
+            
             file_stream.clear(); // Clear EOF flag
             file_stream.seekg(0, std::ios::beg); // Rewind to start
-            
+
+            bool sent_at_least_once = false;
             while(true){
                 file_stream.read(buffer, chunk_size);
                 std::streamsize len = file_stream.gcount();
 
-                if(len<=0)break;
+                // Always send at least one request, even if file is empty
+                if(len <= 0 && sent_at_least_once) break;
+
                 afs_operation::FileRequest request;
                 request.set_directory(resolved_path);
                 request.set_filename(filename);
@@ -697,13 +703,21 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
                 if (!writer->Write(request)){
                     break;
                 }
+                sent_at_least_once = true;
+
+                if(len <= 0) break; // Break after sending empty chunk
             }
+            std::cout << "[CLIENT] Calling WritesDone()..." << std::endl;
             writer->WritesDone();
+            std::cout << "[CLIENT] WritesDone() complete, calling Finish()..." << std::endl;
+            std::cout.flush(); // Force output before potentially blocking call
             status = writer->Finish();
+            std::cout << "[CLIENT] Finish() returned with status: " << status.error_code() << std::endl;
             num_of_tries ++;
         }
+        std::cout << "Can you pass here 3" << std::endl;
         file_stream.close();
-
+        
         if (!status.ok()) {
             std::cerr << "RPC failed while flushing file to server: " << status.error_message() << std::endl;
             return false; 

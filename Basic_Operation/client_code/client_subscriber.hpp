@@ -20,8 +20,9 @@ void FileSystemClient::RunSubscriber() {
     while (reader->Read(&note)) {          // execution blocks here and the while loop won't be executed until a notification arrives
         std::cout << "NOTIFICATION RECEIVED: " << note.message() << " for " << note.directory() << std::endl;
 
-        std::string path_on_server = note.directory() + (note.directory().back() == '/' ? "" : "/");
-        std::string path_on_client = std::string("./tmp/cache") + (path_on_server.front()=='/'? "" : "/") + path_on_server;
+        // note.directory() contains the FULL FILE PATH (not just directory)
+        std::string path_on_server = note.directory();
+        std::string path_on_client = std::string("./tmp/cache") + path_on_server;
 
             // we will erase the corresponding file in cache if we want to update
             // it is important to note that two clients can't open the same file at the same time

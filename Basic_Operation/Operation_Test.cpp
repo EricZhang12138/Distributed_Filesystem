@@ -127,6 +127,7 @@ int main() {
     log_test("Persistence (Close & Re-open)");
 
     bool close_res = client.close_file(test_file, test_dir);
+    std::cout << "Can you pass this stage" << std::endl;
     assert_true(close_res, "File closed (flushed to server)");
 
     // Simulate another client or restart by clearing local cache (manually for test)

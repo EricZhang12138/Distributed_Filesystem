@@ -27,14 +27,25 @@ int64_t get_file_timestamp(const std::string& path) {
     return timestamp;
 }
 
+// temperary debug
+void print_unorder(std::unordered_set<std::string> set, std::string path){
+    std::cout << "Current client which registered(close): " << path << ":"; 
+    for (std::string s: set){
+        std::cout << s << ",";
+    }
+}
+
+
 // this is called in close()
 bool FileSystem::file_change_callback_close(const std::string& path, const std::string& client_id, afs_operation::Notification& notif){
     // close() is called
     {
+        std::cout << "myclose is triggered" << std::endl;
         std::lock_guard<std::mutex> lock_file_map(file_map_mutex);
         auto it = file_map.find(path);
         if (it != file_map.end()){  // we find the path entry in the file_map
             std::unordered_set<std::string> client_set = it -> second;
+            print_unorder(client_set, path);
             {
                 std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
                 for (const std::string client: client_set){ // iterate through the client_set and update all of them
@@ -44,15 +55,15 @@ bool FileSystem::file_change_callback_close(const std::string& path, const std::
                         // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
                         std::shared_ptr<NotificationQueue> notif_queue = queue_it->second;
                         // push to the producer worker queue
-                        notif_queue->push(notif); 
+                        std::cout << "myclose is pushed to the queue" << std::endl;
+                        notif_queue->push(notif);
                     }
                 }
             }
         }else{// this may mean that we created the file on the client and we have not registered it on the maps
-            { // register this file path and the client id in file_map
-            std::lock_guard<std::mutex> lock(file_map_mutex);
+            // register this file path and the client id in file_map
+            // NOTE: We already hold file_map_mutex from line 34, so NO nested lock needed
             file_map[path].insert(client_id); // add the path to the map and add the corresponding client
-            }
         }
     }
     return true;
@@ -295,7 +306,8 @@ grpc::Status FileSystem::open(grpc::ServerContext* context, const afs_operation:
 
 
 grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<afs_operation::FileRequest>* reader, afs_operation::FileResponse* response) {
-    
+    std::cout << "[SERVER] close() called" << std::endl;
+
     afs_operation::FileRequest request;
     std::string filename;
     std::string path;
@@ -303,6 +315,7 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
 
     std::ofstream outfile;
 
+    std::cout << "[SERVER] Starting to read chunks..." << std::endl;
     while(reader->Read(&request)){
         if(filename.empty() || path.empty()){
             filename = request.filename();
@@ -320,8 +333,7 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
         client_id = request.client_id();
     }
 
-
-
+    std::cout << "close is in progress" <<std::endl;
     if(outfile.is_open()) outfile.close();
     
     // Check if path is empty, which happens if no messages were received
@@ -335,13 +347,15 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     response->set_timestamp(timestamp_server);
 
 
-    // generate the Notification object that we are gonna use to pass to all related clients 
-    afs_operation::Notification notif; 
+    // generate the Notification object that we are gonna use to pass to all related clients
+    afs_operation::Notification notif;
     notif.set_directory(path);
     notif.set_message("UPDATE");
     notif.set_timestamp(timestamp_server);
     // then we start updating the maps for the specific file
+    std::cout << "[SERVER] Calling file_change_callback_close..." << std::endl;
     file_change_callback_close(path, client_id, notif);
+    std::cout << "[SERVER] Callback complete, returning OK" << std::endl;
 
     return grpc::Status::OK;
 }
