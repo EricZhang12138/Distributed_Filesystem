@@ -9,19 +9,20 @@ RUN apt-get update && apt-get install -y \
     libprotobuf-dev \
     libgrpc++-dev \
     libprotoc-dev \
-    protobuf-compiler-grpc
+    protobuf-compiler-grpc \
+    libboost-all-dev 
 
 # create Filesystems and then move into Filesystems
-WORKDIR /FileSystems
+WORKDIR /Filesystems
 
 # copy the contents in the directory where Dockerfile resides (first dot) into the /Filesystems directory
 COPY . .
 
+WORKDIR /Filesystems/build
 
+EXPOSE 50051
 
-
-#WORKDIR /build
-
-#RUN cmake .. && make
+RUN cmake .. && make
+CMD ["./afs_server", "../Filesystem_server"]
 
 
