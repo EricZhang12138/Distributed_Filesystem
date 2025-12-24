@@ -12,7 +12,7 @@
 
 
  
-FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel) : stub_(afs_operation::operators::NewStub(channel)){
+FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel, std::string cache_path) : stub_(afs_operation::operators::NewStub(channel)), cache_directory(cache_path){
     // Generate a universally unique identifier for client ID
     boost::uuids::random_generator gen;
     boost::uuids::uuid id = gen();
@@ -127,7 +127,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
     std::string resolved_path = resolve_server_path(path);
     std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
 
-    std::string cache_dir = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") +resolved_path; // Use resolved_path
+    std::string cache_dir = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") +resolved_path; // Use resolved_path
     std::string file_location = cache_dir + (cache_dir.back() == '/' ? "" : "/") + filename;
     
     // Case 1: File is NOT in the local cache
@@ -381,7 +381,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 bool FileSystemClient::read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer){
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string file_location = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
     cache_mutex.lock();
     if (cache.find(file_location)==cache.end()){
@@ -436,7 +436,7 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
 bool FileSystemClient::write_file(const std::string& filename, const std::string& data, const std::string& directory, std::streampos position){
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back()=='/' ? "" : "/") + filename; 
+    std::string file_location = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back()=='/' ? "" : "/") + filename; 
 
     cache_mutex.lock();
     if (cache.find(file_location) == cache.end()){
@@ -522,8 +522,8 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
 bool FileSystemClient::create_file(const std::string& filename, const std::string& path) {
 
     std::string resolved_path = resolve_server_path(path);
-    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
-    std::string cache_dir = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path;
+    std::string file_location = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string cache_dir = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path;
 
     cache_mutex.lock();
     if (cache.count(file_location) || opened_files.count(file_location)) {
@@ -605,7 +605,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
 bool FileSystemClient::close_file(const std::string& filename, const std::string& directory) {
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string file_location = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
     // 1. Lock Global State
     std::unique_lock<std::mutex> global_lock(cache_mutex);
@@ -798,8 +798,8 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
 
     // 1. Prepare Paths
     // We add a trailing slash to base_dir so we can build generic paths safely
-    std::string base_dir = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/");
-    std::string base_dir_new = std::string("./tmp/cache")+ (resolved_path_new.front() == '/' ? "" : "/")+ resolved_path_new + (resolved_path_new.back() == '/' ? "" : "/");
+    std::string base_dir = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/");
+    std::string base_dir_new = std::string(cache_directory)+ (resolved_path_new.front() == '/' ? "" : "/")+ resolved_path_new + (resolved_path_new.back() == '/' ? "" : "/");
     std::string old_local_path = base_dir + from_name;
     std::string new_local_path = base_dir_new + to_name;
 
@@ -914,7 +914,7 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
 
 bool FileSystemClient::truncate_file(const std::string& filename, const std::string& path, const int size){
     std::string resolved_path = resolve_server_path(path);
-    std::string cache_path = std::string("./tmp/cache") + (resolved_path[0] == '/'? "" : "/" ) + resolved_path +filename;
+    std::string cache_path = std::string(cache_directory) + (resolved_path[0] == '/'? "" : "/" ) + resolved_path +filename;
     try{
         std::filesystem::resize_file(cache_path, size);
     } catch(std::filesystem::filesystem_error& e){
@@ -945,7 +945,7 @@ bool FileSystemClient::make_directory(const std::string& directory, const uint32
 
 bool FileSystemClient::delete_file(const std::string& directory){
     std::string resolved_path = resolve_server_path(directory);
-    std::string cache_path = std::string("./tmp/cache") + (resolved_path[0] == '/'? "" : "/" ) + resolved_path;
+    std::string cache_path = std::string(cache_directory) + (resolved_path[0] == '/'? "" : "/" ) + resolved_path;
     if (cache_path.back() == '/') cache_path.pop_back();
     std::filesystem::path path(directory);
     

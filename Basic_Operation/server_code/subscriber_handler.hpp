@@ -39,6 +39,7 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
     afs_operation::Notification note;
     while(queue->pop(note)){                           // this keeps returning true unless shutdown + queue empty
         // If Write fails (client disconnected), we break the loop
+        std::cout << "popping: " << note.directory() << " " << note.message() << std::endl;
         if (!writer->Write(note)) {
             std::cout << "Client disconnected: " << client_id << std::endl;
             break; 

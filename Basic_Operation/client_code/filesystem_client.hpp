@@ -40,6 +40,7 @@ private:
     std::unique_ptr<grpc::ClientContext> subscriber_context_;
     std::thread subscriber_thread;
     std::unordered_map<std::string, std::shared_ptr<std::mutex>> file_mutexes; // Protects file stream access
+    std::string cache_directory;
     void RunSubscriber();
 
 public:
@@ -49,7 +50,7 @@ public:
      * @brief Constructs the client and initializes the connection with the server.
      * @param channel The gRPC channel to use for communication.
      */
-    FileSystemClient(std::shared_ptr<grpc::Channel> channel);
+    FileSystemClient(std::shared_ptr<grpc::Channel> channel, std::string cache_path = "./tmp/cache");
     ~FileSystemClient();
 
     std::string resolve_server_path(const std::string& user_path);

@@ -29,10 +29,50 @@ int64_t get_file_timestamp(const std::string& path) {
 
 // temperary debug
 void print_unorder(std::unordered_set<std::string> set, std::string path){
-    std::cout << "Current client which registered(close): " << path << ":"; 
+    std::cout << "Current client which registered(close): " << path << ": "; 
     for (std::string s: set){
-        std::cout << s << ",";
+        std::cout << s << ", ";
     }
+    std::cout << "\n";
+}
+
+void print_notification_queue(const std::string& client_id, std::shared_ptr<NotificationQueue> notif_queue) {
+    if (!notif_queue) {
+        std::cout << "[DEBUG] Queue for client " << client_id << " is NULL" << std::endl;
+        return;
+    }
+    
+    std::lock_guard<std::mutex> lock(notif_queue->mu);
+    
+    std::cout << "========================================" << std::endl;
+    std::cout << "[DEBUG] Notification Queue for Client: " << client_id << std::endl;
+    std::cout << "Queue Size: " << notif_queue->queue.size() << std::endl;
+    std::cout << "Shutdown: " << (notif_queue->shutdown ? "true" : "false") << std::endl;
+    std::cout << "----------------------------------------" << std::endl;
+    
+    if (notif_queue->queue.empty()) {
+        std::cout << "  (Queue is empty)" << std::endl;
+    } else {
+        // Create a temporary copy to iterate without destroying original
+        std::queue<afs_operation::Notification> temp_queue = notif_queue->queue;
+        int index = 0;
+        
+        while (!temp_queue.empty()) {
+            const afs_operation::Notification& notif = temp_queue.front();
+            
+            std::cout << "  [" << index << "] Message: " << notif.message() << std::endl;
+            std::cout << "      Directory: " << notif.directory() << std::endl;
+            if (!notif.new_directory().empty()) {
+                std::cout << "      New Directory: " << notif.new_directory() << std::endl;
+            }
+            std::cout << "      Timestamp: " << notif.timestamp() << std::endl;
+            std::cout << "      ---" << std::endl;
+            
+            temp_queue.pop();
+            index++;
+        }
+    }
+    std::cout << "========================================" << std::endl;
 }
 
 
@@ -49,14 +89,19 @@ bool FileSystem::file_change_callback_close(const std::string& path, const std::
             {
                 std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
                 for (const std::string client: client_set){ // iterate through the client_set and update all of them
+                    std::cout << client << std::endl;
                     if (client == client_id) continue; // skip the client that initiated the rename
                     auto queue_it = subscribers.find(client);
+
                     if (queue_it != subscribers.end()) {
                         // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
                         std::shared_ptr<NotificationQueue> notif_queue = queue_it->second;
                         // push to the producer worker queue
                         std::cout << "myclose is pushed to the queue" << std::endl;
                         notif_queue->push(notif);
+                        print_notification_queue(client_id, notif_queue);
+                    }else{
+                        std::cout << "we don't find "<< client << " in subscribers"<< std::endl;
                     }
                 }
             }
@@ -356,6 +401,7 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     std::cout << "[SERVER] Calling file_change_callback_close..." << std::endl;
     file_change_callback_close(path, client_id, notif);
     std::cout << "[SERVER] Callback complete, returning OK" << std::endl;
+    std::cout.flush();
 
     return grpc::Status::OK;
 }

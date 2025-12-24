@@ -75,7 +75,7 @@ target_link_libraries(afs_server
     protobuf::libprotobuf
 )
 
-# 5. Test Filesystem
+# 5. Test Filesystem 1
 add_executable(client_test
     Basic_Operation/Operation_Test.cpp
     Basic_Operation/client_code/filesystem_client.cpp
@@ -89,5 +89,23 @@ target_include_directories(client_test PRIVATE
 )
 
 target_link_libraries(client_test
+    gRPC::grpc++
+    protobuf::libprotobuf)
+
+# 6. Test Filesystem 2
+add_executable(register_test
+    Basic_Operation/client_test.cpp
+    Basic_Operation/client_code/filesystem_client.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
+
+target_include_directories(register_test PRIVATE
+    Basic_Operation/client_code
+    ${CMAKE_CURRENT_BINARY_DIR}            # To find generated .pb.h files
+    "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
+)
+
+target_link_libraries(register_test
     gRPC::grpc++
     protobuf::libprotobuf)

@@ -22,7 +22,7 @@ void FileSystemClient::RunSubscriber() {
 
         // note.directory() contains the FULL FILE PATH (not just directory)
         std::string path_on_server = note.directory();
-        std::string path_on_client = std::string("./tmp/cache") + path_on_server;
+        std::string path_on_client = std::string(cache_directory) + (path_on_server.front() == '/'? "" : "/") + path_on_server;
 
             // we will erase the corresponding file in cache if we want to update
             // it is important to note that two clients can't open the same file at the same time
