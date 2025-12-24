@@ -495,6 +495,7 @@ grpc::Status FileSystem::mkdir(grpc::ServerContext* context, const afs_operation
 /// @param response   Success or fail
 /// @return 
 grpc::Status FileSystem::rename(grpc::ServerContext* context, const afs_operation::RenameRequest* request, afs_operation::RenameResponse* response) {
+    std::cout << "Rename on the server starts ..." << std::endl;
     std::string directory = request->directory();
     std::string directory_new = request -> new_directory();
     std::string client_id = request -> client_id();

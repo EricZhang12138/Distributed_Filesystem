@@ -25,4 +25,5 @@ EXPOSE 50051
 RUN cmake .. && make
 CMD ["./afs_server", "../Filesystem_server"]
 
+# at run time for the built image, you need to run docker run -p 50051:50051 -v $(pwd):/Filesystems/Filesystem_server my-image
 

@@ -378,7 +378,7 @@ static fuse_operations afs_oper = {
 
 
 int main(int argc, char *argv[]){
-    std::string address = "localhost:50051";
+    std::string address = "192.168.0.31:50051";
     auto channel = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
 
     FileSystemClient* client = new FileSystemClient(channel);

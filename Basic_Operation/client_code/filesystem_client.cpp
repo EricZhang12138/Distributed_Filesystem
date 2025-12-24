@@ -127,7 +127,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
     std::string resolved_path = resolve_server_path(path);
     std::cout << "DEBUG: Opening '" << filename << "' at resolved path: " << resolved_path << std::endl;
 
-    std::string cache_dir = "./tmp/cache" + resolved_path; // Use resolved_path
+    std::string cache_dir = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") +resolved_path; // Use resolved_path
     std::string file_location = cache_dir + (cache_dir.back() == '/' ? "" : "/") + filename;
     
     // Case 1: File is NOT in the local cache
@@ -232,8 +232,6 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 
     }else {
         // found the file in cache
-        cache_mutex.unlock();
-        cache_mutex.lock();
         if (opened_files.find(file_location) != opened_files.end()){
             std::cout << "The file: " << file_location << " is already open" << std::endl;
             cache_mutex.unlock();
@@ -383,7 +381,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 bool FileSystemClient::read_file(const std::string& filename, const std::string& directory, const int size, const int offset, std::vector<char>& buffer){
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
     cache_mutex.lock();
     if (cache.find(file_location)==cache.end()){
@@ -438,7 +436,7 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
 bool FileSystemClient::write_file(const std::string& filename, const std::string& data, const std::string& directory, std::streampos position){
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back()=='/' ? "" : "/") + filename; 
+    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back()=='/' ? "" : "/") + filename; 
 
     cache_mutex.lock();
     if (cache.find(file_location) == cache.end()){
@@ -524,8 +522,8 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
 bool FileSystemClient::create_file(const std::string& filename, const std::string& path) {
 
     std::string resolved_path = resolve_server_path(path);
-    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
-    std::string cache_dir = "./tmp/cache" + resolved_path;
+    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string cache_dir = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path;
 
     cache_mutex.lock();
     if (cache.count(file_location) || opened_files.count(file_location)) {
@@ -607,7 +605,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
 bool FileSystemClient::close_file(const std::string& filename, const std::string& directory) {
 
     std::string resolved_path = resolve_server_path(directory);
-    std::string file_location = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string file_location = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
     // 1. Lock Global State
     std::unique_lock<std::mutex> global_lock(cache_mutex);
@@ -794,15 +792,20 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
 // In filesystem_client.cpp
 
 bool FileSystemClient::rename_file(const std::string& from_name, const std::string& to_name, const std::string& old_path, const std::string& new_path) {
+    std::cout << "[RENAME] from='" << from_name << "' to='" << to_name << "'" << std::endl;
     std::string resolved_path = resolve_server_path(old_path);
     std::string resolved_path_new = resolve_server_path(new_path);
-    
+
     // 1. Prepare Paths
     // We add a trailing slash to base_dir so we can build generic paths safely
-    std::string base_dir = "./tmp/cache" + resolved_path + (resolved_path.back() == '/' ? "" : "/");
-    std::string base_dir_new = "./tmp/cache" + resolved_path_new + (resolved_path_new.back() == '/' ? "" : "/");
-    std::string old_local_path = base_dir + from_name; 
+    std::string base_dir = std::string("./tmp/cache") + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/");
+    std::string base_dir_new = std::string("./tmp/cache")+ (resolved_path_new.front() == '/' ? "" : "/")+ resolved_path_new + (resolved_path_new.back() == '/' ? "" : "/");
+    std::string old_local_path = base_dir + from_name;
     std::string new_local_path = base_dir_new + to_name;
+
+    std::cout << "[RENAME] old_local_path='" << old_local_path << "'" << std::endl;
+    std::cout << "[RENAME] new_local_path='" << new_local_path << "'" << std::endl;
+    std::cout << "[RENAME] Old exists? " << std::filesystem::exists(old_local_path) << std::endl;
 
     // 2. SAFETY CHECK: Destination Collision
     // If the new name already exists, we must be careful. 
@@ -822,11 +825,17 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
     }
 
     // 3. Perform the Physical Rename (Moves folder AND contents)
-    try {
-        std::filesystem::rename(old_local_path, new_local_path);
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Rename failed: " << e.what() << std::endl;
-        return false;
+    // Only rename locally if the item exists in cache
+    if (std::filesystem::exists(old_local_path)) {
+        try {
+            std::filesystem::rename(old_local_path, new_local_path);
+            std::cout << "[RENAME] Successfully renamed locally" << std::endl;
+        } catch (const std::filesystem::filesystem_error& e) {
+            std::cerr << "Rename failed: " << e.what() << std::endl;
+            return false;
+        }
+    } else {
+        std::cout << "[RENAME] Item not in local cache, skipping local rename (will rename on server)" << std::endl;
     }
 
     // 4. Update In-Memory Maps
