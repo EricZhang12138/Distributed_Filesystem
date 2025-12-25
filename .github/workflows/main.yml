@@ -48,7 +48,6 @@ jobs:
         cd build
         mkdir -p server_test
         ./afs_server ./server_test &     # 1. Start the server in the background (& ensures this is running in the background)
-
         SERVER_PID=$!      # 2. Capture the process ID
 
         echo "Waiting for server to start..."
@@ -65,7 +64,7 @@ jobs:
         mkdir -p server_test
         ./afs_server ./server_test &
         
-        SERVER_PID =$!
+        SERVER_PID=$!
 
         echo "Waiting for server to start ..."
         sleep 3
