@@ -59,3 +59,18 @@ jobs:
 
         kill $SERVER_PID
 
+    - name: Run callback_test
+      run: |
+        cd build
+        mkdir -p server_test
+        ./afs_server ./server_test &
+        
+        SERVER_PID =$!
+
+        echo "Waiting for server to start ..."
+        sleep 3
+
+        ./register_test
+
+        kill $SERVER_PID
+
