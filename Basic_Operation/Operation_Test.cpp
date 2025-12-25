@@ -42,7 +42,7 @@ bool verify_metadata(FileSystemClient& client, const std::string& filename, cons
     }
 
     // Check Physical Disk (Cache file)
-    std::string local_path = "./tmp/cache" + cache_key;
+    std::string local_path = "./tmp/cache/" + cache_key;
     struct stat s;
     if (stat(local_path.c_str(), &s) != 0) {
         std::cerr << RED << "  Local cache file missing on disk" << RESET << std::endl;
