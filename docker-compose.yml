@@ -1,0 +1,45 @@
+version: '3.8'
+services: 
+  afs_server:
+    build: .
+    image: filesystem_env
+    container_name: filesystem_server_node
+    working_dir: /Filesystems/build
+    command: ./afs_server ../Filesystem_server
+    ports: 
+      - "50051:50051"
+    volumes: 
+      - ./Test_env/Filesystem_server:../Test_env/Filesystem_server     # the AFS_SERVER directory will be automatically created on the host if AFS_SERVER doesn't exist
+  
+
+  client_1:
+    image: filesystem_env
+    container_name: client_1_node
+    depends_on: 
+      - afs_server
+    cap_add: 
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    environment:
+      - SERVER_ADDRESS=afs-server:50051  # Point to the server container
+    working_dir: /Filesystems/build
+    command: ./afs_client -f ../Test_env/client_1
+    volumes:
+      - ./Test_env/client_1:../Test_env/client_1:rshared
+
+  client_2:
+    image: filesystem_env
+    container_name: client_2_node
+    depends_on: 
+      - afs_server
+    cap_add: 
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    environment:
+      - SERVER_ADDRESS=afs-server:50051  # Point to the server container
+    working_dir: /Filesystems/build
+    command: ./afs_client -f ../Test_env/client_2
+    volumes:
+      - ./Test_env/client_2:../Test_env/client_2:rshared

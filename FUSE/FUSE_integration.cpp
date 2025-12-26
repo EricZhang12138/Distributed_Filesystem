@@ -378,7 +378,9 @@ static fuse_operations afs_oper = {
 
 
 int main(int argc, char *argv[]){
-    std::string address = "192.168.0.31:50051";
+    const char* env_addr = std::getenv("SERVER_ADDRESS");
+    std::string address = env_addr ? std::string(env_addr) : "127.0.0.1:50051";
+    //std::string address = "192.168.0.31:50051";
     auto channel = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
 
     FileSystemClient* client = new FileSystemClient(channel);
