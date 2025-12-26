@@ -9,7 +9,7 @@ services:
     ports: 
       - "50051:50051"
     volumes: 
-      - ./Test_env/Filesystem_server:../Test_env/Filesystem_server     # the AFS_SERVER directory will be automatically created on the host if AFS_SERVER doesn't exist
+      - ../Test_env/Filesystem_server:/Filesystems/Test_env/Filesystem_server     # the AFS_SERVER directory will be automatically created on the host if AFS_SERVER doesn't exist
   
 
   client_1:
@@ -22,11 +22,11 @@ services:
     devices:
       - /dev/fuse
     environment:
-      - SERVER_ADDRESS=afs-server:50051  # Point to the server container
+      - SERVER_ADDRESS=afs_server:50051  # Point to the server container
     working_dir: /Filesystems/build
     command: ./afs_client -f ../Test_env/client_1
     volumes:
-      - ./Test_env/client_1:../Test_env/client_1:rshared
+      - ../Test_env/client_1:/Filesystems/Test_env/client_1:rshared
 
   client_2:
     image: filesystem_env
@@ -38,8 +38,8 @@ services:
     devices:
       - /dev/fuse
     environment:
-      - SERVER_ADDRESS=afs-server:50051  # Point to the server container
+      - SERVER_ADDRESS=afs_server:50051  # Point to the server container
     working_dir: /Filesystems/build
     command: ./afs_client -f ../Test_env/client_2
     volumes:
-      - ./Test_env/client_2:../Test_env/client_2:rshared
+      - ../Test_env/client_2:/Filesystems/Test_env/client_2:rshared
