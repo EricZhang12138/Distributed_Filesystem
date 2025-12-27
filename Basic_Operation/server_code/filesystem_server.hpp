@@ -95,6 +95,8 @@ private:
     grpc::Status unlink(grpc::ServerContext* context, const afs_operation::Delete_request* request, afs_operation::Delete_response* response) override;
 
     grpc::Status subscribe(grpc::ServerContext* context, const afs_operation::SubscribeRequest* request, grpc::ServerWriter<afs_operation::Notification>* writer) override;
+
+    grpc::Status GetStatus(grpc::ServerContext* context, const afs_operation::GetStatusRequest* request, afs_operation::GetStatusResponse* response) override;
 };
 
 

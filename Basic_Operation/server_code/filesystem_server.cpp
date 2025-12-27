@@ -609,6 +609,38 @@ grpc::Status FileSystem::unlink(grpc::ServerContext* context, const afs_operatio
     return grpc::Status::OK;
 }
 
+// gRPC for the dashboard
+grpc::Status FileSystem::GetStatus(grpc::ServerContext* context, 
+                                   const afs_operation::GetStatusRequest* request, 
+                                   afs_operation::GetStatusResponse* response) {
+    
+    // 1. Handle Connected Clients (Cleaner using repeated)
+    {
+        std::lock_guard<std::mutex> lock(client_db_mutex);
+        
+        for (const auto& client_id : clients_db) {
+            // "add_connected_clients" is automatically generated for repeated fields
+            response->add_connected_clients(client_id);
+        }
+    }
+
+    // 2. Handle File Map (Same as before)
+    {
+        std::lock_guard<std::mutex> lock(file_map_mutex);
+        auto* response_map = response->mutable_file_to_clients();
+
+        for (const auto& [file_path, user_set] : file_map) {
+            afs_operation::FileUsers file_users_msg;
+            for (const auto& user_id : user_set) {
+                file_users_msg.add_users(user_id);
+            }
+            (*response_map)[file_path] = file_users_msg;
+        }
+    }
+
+    return grpc::Status::OK;
+}
+
 void FileSystem::RunServer(){
     std::string server_address = "0.0.0.0:50051";
     

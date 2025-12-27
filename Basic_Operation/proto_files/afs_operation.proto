@@ -101,7 +101,7 @@ message GetStatusRequest {
 }
 
 message GetStatusResponse {
-    string connected_clients =1;
+    repeated string connected_clients = 1;
     map<string, FileUsers> file_to_clients = 2;
 }
 
