@@ -92,6 +92,18 @@ message Notification {
     int64 timestamp = 5;     // The last time the file was changed recorded on the server to update the version of the file in cache
 }
 
+message FileUsers {
+  repeated string users = 1;
+}
+
+message GetStatusRequest {
+
+}
+
+message GetStatusResponse {
+    string connected_clients =1;
+    map<string, FileUsers> file_to_clients = 2;
+}
 
 
 
@@ -106,6 +118,7 @@ service operators{
     rpc mkdir (MakeDir_request) returns (MakeDir_response);
     rpc unlink (Delete_request) returns (Delete_response);
     rpc subscribe(SubscribeRequest) returns (stream Notification);
+    rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
 }
 
 
