@@ -119,3 +119,43 @@ target_include_directories(register_test PRIVATE
 target_link_libraries(register_test
     gRPC::grpc++
     protobuf::libprotobuf)
+
+# 7. CI Test Client 1
+add_executable(ci_test_client_1
+    Basic_Operation/ci_test_client_1.cpp
+    Basic_Operation/client_code/filesystem_client.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
+
+target_include_directories(ci_test_client_1 PRIVATE
+    Basic_Operation/client_code
+    ${CMAKE_CURRENT_BINARY_DIR}
+    "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
+)
+
+target_link_libraries(ci_test_client_1
+    gRPC::grpc++
+    protobuf::libprotobuf
+    Boost::boost
+)
+
+# 8. CI Test Client 2
+add_executable(ci_test_client_2
+    Basic_Operation/ci_test_client_2.cpp
+    Basic_Operation/client_code/filesystem_client.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
+
+target_include_directories(ci_test_client_2 PRIVATE
+    Basic_Operation/client_code
+    ${CMAKE_CURRENT_BINARY_DIR}
+    "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
+)
+
+target_link_libraries(ci_test_client_2
+    gRPC::grpc++
+    protobuf::libprotobuf
+    Boost::boost
+)

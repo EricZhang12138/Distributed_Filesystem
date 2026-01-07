@@ -3,45 +3,75 @@
 version: '3.8'
 services: 
   afs_server:
+    # build: . is finding the dockerfile in the current directory and then build the image
     build: .
     image: filesystem_env
     container_name: filesystem_server_node
     working_dir: /Filesystems/build
-    command: ./afs_server ../Test_env/Filesystem_server
+    command: >
+      sh -c "mkdir -p ../Test_env/Filesystem_server/test &&
+      touch ../Test_env/Filesystem_server/test/file1.txt &&
+      timeout 60 ./afs_server ../Test_env/Filesystem_server"
+
     ports: 
       - "50051:50051"
     volumes: 
       - ./Test_env/Filesystem_server:/Filesystems/Test_env/Filesystem_server     # the AFS_SERVER directory will be automatically created on the host if AFS_SERVER doesn't exist
   
 
-  client_1:
-    image: filesystem_env
-    container_name: client_1_node
-    depends_on: 
-      - afs_server
-    cap_add: 
-      - SYS_ADMIN
-    devices:
-      - /dev/fuse
-    environment:
-      - SERVER_ADDRESS=afs_server:50051  # Point to the server container
-    working_dir: /Filesystems/build
-    command: ["./afs_client", "-f", "../Test_env/client_1"]
-    volumes:
-      - ./Test_env/client_1:/Filesystems/Test_env/client_1
+  # client_1:
+  #   image: filesystem_env
+  #   container_name: client_1_node
+  #   depends_on:
+  #     - afs_server
+  #   cap_add:
+  #     - SYS_ADMIN
+  #   devices:
+  #     - /dev/fuse
+  #   environment:
+  #     - SERVER_ADDRESS=afs_server:50051  # Point to the server container
+  #   working_dir: /Filesystems/build
+  #   command: ["./afs_client", "-f", "../Test_env/client_1"]
+  #   volumes:
+  #     - ./Test_env/client_1:/Filesystems/Test_env/client_1
 
-  client_2:
+  # client_2:
+  #   image: filesystem_env
+  #   container_name: client_2_node
+  #   depends_on:
+  #     - afs_server
+  #   cap_add:
+  #     - SYS_ADMIN
+  #   devices:
+  #     - /dev/fuse
+  #   environment:
+  #     - SERVER_ADDRESS=afs_server:50051  # Point to the server container
+  #   working_dir: /Filesystems/build
+  #   command: ["./afs_client", "-f", "../Test_env/client_2"]
+  #   volumes:
+  #     - ./Test_env/client_2:/Filesystems/Test_env/client_2
+
+  # CI/CD Testing containers
+  test_client_1:
     image: filesystem_env
-    container_name: client_2_node
-    depends_on: 
+    container_name: test_client_1_node
+    depends_on:
       - afs_server
-    cap_add:
-      - SYS_ADMIN
-    devices:
-      - /dev/fuse
     environment:
-      - SERVER_ADDRESS=afs_server:50051  # Point to the server container
+      - SERVER_ADDRESS=afs_server:50051
     working_dir: /Filesystems/build
-    command: ["./afs_client", "-f", "../Test_env/client_2"]
+    command: ["./ci_test_client_1"]
     volumes:
-      - ./Test_env/client_2:/Filesystems/Test_env/client_2
+      - ./Test_env:/Filesystems/Test_env
+
+  test_client_2:
+    image: filesystem_env
+    container_name: test_client_2_node
+    depends_on:
+      - afs_server
+    environment:
+      - SERVER_ADDRESS=afs_server:50051
+    working_dir: /Filesystems/build
+    command: ["./ci_test_client_2"]
+    volumes:
+      - ./Test_env:/Filesystems/Test_env
