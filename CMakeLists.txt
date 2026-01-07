@@ -45,6 +45,9 @@ add_custom_command(
     DEPENDS ${PROTO_FILE}
 )
 
+
+# add_executable determines the .o files we gonna generate after compilation. 
+# one for filesystem_client.cpp , one for FUSE_integration.cpp and so on.
 # 3. Client Executable
 add_executable(afs_client
     Basic_Operation/client_code/filesystem_client.cpp                # These are relative to the path of the CMakelists.txt
@@ -87,7 +90,7 @@ target_link_libraries(afs_server
 
 # 5. Test Filesystem 1
 add_executable(client_test
-    Basic_Operation/Operation_Test.cpp
+    Basic_Operation/test/Operation_Test.cpp
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS})
@@ -104,7 +107,7 @@ target_link_libraries(client_test
 
 # 6. Test Filesystem 2
 add_executable(register_test
-    Basic_Operation/client_test.cpp
+    Basic_Operation/test/client_test.cpp
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}
@@ -122,7 +125,7 @@ target_link_libraries(register_test
 
 # 7. CI Test Client 1
 add_executable(ci_test_client_1
-    Basic_Operation/ci_test_client_1.cpp
+    Basic_Operation/test/ci_test_client_1.cpp
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}
@@ -142,7 +145,7 @@ target_link_libraries(ci_test_client_1
 
 # 8. CI Test Client 2
 add_executable(ci_test_client_2
-    Basic_Operation/ci_test_client_2.cpp
+    Basic_Operation/test/ci_test_client_2.cpp
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}

@@ -43,7 +43,7 @@ jobs:
         cd build
         make
 
-    - name: Run Test
+    - name: Run Test 1
       run: | 
         cd build
         mkdir -p server_test
@@ -72,4 +72,26 @@ jobs:
         ./register_test
 
         kill $SERVER_PID
+    
+    - name: Run Tests on three containers
+      run: |
+        docker-compose build afs_server
+        docker-compose up
+
+        # Get exit codes from test clients
+        EXIT_CODE_1=$(docker inspect test_client_1_node --format='{{.State.ExitCode}}')
+        EXIT_CODE_2=$(docker inspect test_client_2_node --format='{{.State.ExitCode}}')
+
+        echo "Test Client 1 exit code: $EXIT_CODE_1"
+        echo "Test Client 2 exit code: $EXIT_CODE_2"
+
+        # Fail the workflow if either test client failed
+        if [ "$EXIT_CODE_1" -ne 0 ] || [ "$EXIT_CODE_2" -ne 0 ]; then
+          echo "One or more test clients failed"
+          exit 1
+        fi
+
+        echo "All tests passed successfully"
+
+
 
