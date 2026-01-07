@@ -17,6 +17,7 @@ WORKDIR /Filesystems
 
 # copy the contents in the directory where Dockerfile resides (first dot) into the /Filesystems directory
 COPY . .
+RUN rm -rf build && mkdir build
 
 WORKDIR /Filesystems/build
 
