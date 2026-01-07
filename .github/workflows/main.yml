@@ -75,8 +75,8 @@ jobs:
     
     - name: Run Tests on three containers
       run: |
-        docker-compose build afs_server
-        docker-compose up
+        docker compose build afs_server
+        docker compose up
 
         # Get exit codes from test clients
         EXIT_CODE_1=$(docker inspect test_client_1_node --format='{{.State.ExitCode}}')
