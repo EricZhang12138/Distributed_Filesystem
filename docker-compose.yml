@@ -8,10 +8,11 @@ services:
     image: filesystem_env
     container_name: filesystem_server_node
     working_dir: /Filesystems/build
+    # sh basically says "runs the command in a shell"
     command: >
       sh -c "mkdir -p ../Test_env/Filesystem_server/test &&
       touch ../Test_env/Filesystem_server/test/file1.txt &&
-      timeout 60 ./afs_server ../Test_env/Filesystem_server"
+      timeout 35 ./afs_server ../Test_env/Filesystem_server"
 
     ports: 
       - "50051:50051"

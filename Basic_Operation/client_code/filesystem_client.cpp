@@ -658,7 +658,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         // Close streams to release OS locks
         read_stream_ptr->close();
         write_stream_ptr->close();
-        std::cout << "Can you pass here 1" << std::endl;
+        
         // Now open a new read stream for uploading
         std::ifstream file_stream(file_location, std::ios::binary);
         if (!file_stream.is_open()) {
@@ -672,7 +672,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         afs_operation::FileResponse response; 
         int num_of_tries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
-        std::cout << "Can you pass here 2" << std::endl;
+        
         // RPC Loop
         while (num_of_tries < 3 && !status.ok()){
             grpc::ClientContext context;     
@@ -713,7 +713,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
             std::cout << "[CLIENT] Finish() returned with status: " << status.error_code() << std::endl;
             num_of_tries ++;
         }
-        std::cout << "Can you pass here 3" << std::endl;
+        
         file_stream.close();
         
         if (!status.ok()) {

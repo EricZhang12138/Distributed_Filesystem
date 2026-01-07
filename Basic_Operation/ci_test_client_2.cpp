@@ -53,6 +53,10 @@ int main() {
         for (int i = 1; i <= 5; i++) {
             log_action("========== ITERATION " + std::to_string(i) + " ==========");
 
+            // Expected content from client 1 for this iteration
+            std::string expected_content = "Client1_Iteration_" + std::to_string(i) + "_Data";
+            log_action("Expected content: " + expected_content);
+
             // Read from file1.txt
             log_action("Opening file for read");
             if (!client.open_file(filename, directory)) {
@@ -68,13 +72,23 @@ int main() {
             }
 
             std::string content(buffer.begin(), buffer.end());
-            log_success("Read content: " + content);
+            log_action("Actual content read: " + content);
 
             log_action("Closing file after read");
             if (!client.close_file(filename, directory)) {
                 log_error("Failed to close file after read");
                 return 1;
             }
+
+            // Verify content matches expected
+            if (content != expected_content) {
+                log_error("Content mismatch!");
+                log_error("Expected: " + expected_content);
+                log_error("Got: " + content);
+                return 1;
+            }
+
+            log_success("Content verification passed: " + content);
 
             // Wait 5 seconds before next read
             if (i < 5) {

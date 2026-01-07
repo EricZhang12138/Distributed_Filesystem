@@ -99,7 +99,7 @@ bool FileSystem::file_change_callback_close(const std::string& path, const std::
                         // push to the producer worker queue
                         std::cout << "myclose is pushed to the queue" << std::endl;
                         notif_queue->push(notif);
-                        print_notification_queue(client_id, notif_queue);
+                        //print_notification_queue(client_id, notif_queue);
                     }else{
                         std::cout << "we don't find "<< client << " in subscribers"<< std::endl;
                     }
