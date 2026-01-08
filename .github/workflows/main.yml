@@ -121,6 +121,7 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           echo "Filesystem server container arrives"
+          cd ~/Documents/afs_server_deploy
           docker pull ghcr.io/ericzhang12138/fs_server
           docker stop fs_server || true
           docker rm fs_server || true
