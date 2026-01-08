@@ -102,25 +102,32 @@ jobs:
     - name: Build Docker Image
       run: docker build -t server .
     - name: tag for registry
-      run: docker tag server ghcr.io/EricZhang12138/fs_server
+      run: docker tag server ghcr.io/ericzhang12138/fs_server
     - name: push to registry
-      run: docker push ghcr.io/EricZhang12138/fs_server
+      run: docker push ghcr.io/ericzhang12138/fs_server
 
-  # deploy: 
-  #   needs: build-and-push
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - name: ssh to pi
-  #     uses: appleboy/ssh-action@master
-  #     with: 
-  #       #parameters for the ssh action
-  #       #ip address of the host
-  #       host: ${{ secrets.PI1_HOST }}
-  #       username: ${{ secrets.PI1_USERNAME }}
-  #       #private key for authentication 
-  #       key: ${{ secrets.SSH_PRIVATE_KEY }}
-  #   - name: Deploying on the pi
-  #     run: 
+  deploy: 
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+    - name: ssh to pi
+      uses: appleboy/ssh-action@master
+      with: 
+        #parameters for the ssh action
+        #ip address of the host
+        host: ${{ secrets.PI1_HOST }}
+        username: ${{ secrets.PI1_USERNAME }}
+        #private key for authentication 
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          echo "Filesystem server container arrives"
+          docker pull ghcr.io/ericzhang12138/fs_server
+          docker stop fs_server || true
+          docker rm fs_server || true
+          docker run -d --name fs_server \
+            -p 50051:50051 \
+            -v $(pwd):/Filesystems/Test_env/Filesystem_server \
+            ghcr.io/ericzhang12138/fs_server
 
 
 
