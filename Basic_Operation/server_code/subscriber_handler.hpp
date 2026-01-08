@@ -21,8 +21,8 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
     }
 
     std::cout << "Client " << client_id << " subscribed for notifications" << std::endl;
-    // 2. The Blocking Loop
-    // This thread will now "sleep" inside queue->pop() until an event happens
+
+   
 
     std::thread monitor([context, queue, client_id]() {
         while (!context->IsCancelled()) { // constantly checking whether context is cancelled, the context may be cancelled when the client disconnects or crashes
@@ -35,7 +35,7 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
     // when the thread function completes it is automatically handled by the OS
     // it completely detaches from this current thread and becomes a daemon thread 
 
-
+     // This thread will now "sleep" inside queue->pop() until an event happens
     afs_operation::Notification note;
     while(queue->pop(note)){                           // this keeps returning true unless shutdown + queue empty
         // If Write fails (client disconnected), we break the loop

@@ -7,12 +7,11 @@ on:
     branches: ["main"]
 
 jobs:
-  dependency_setup:  # name of this specific job
+  test:  # name of this specific job
     runs-on: ubuntu-latest
-
     steps:
     - name: Copy code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4  # uses a reusable action, in this case, clone the code from the repo to github action
 
     - name: Create Build Directory
       run: |
@@ -32,7 +31,7 @@ jobs:
           libprotoc-dev \
           protobuf-compiler-grpc \
           libboost-all-dev
-
+  
     - name: Configure cmake
       run: |
         cd build 
@@ -42,7 +41,7 @@ jobs:
       run: |
         cd build
         make
-
+  
     - name: Run Test 1
       run: | 
         cd build
@@ -92,6 +91,40 @@ jobs:
         fi
 
         echo "All tests passed successfully"
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps: 
+    - uses: actions/checkout@v2
+    - name: Log in to GitHub Container Registry
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+    - name: Build Docker Image
+      run: docker build -t server .
+    - name: tag for registry
+      run: docker tag server ghcr.io/EricZhang12138/fs_server
+    - name: push to registry
+      run: docker push ghcr.io/EricZhang12138/fs_server
+
+  # deploy: 
+  #   needs: build-and-push
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - name: ssh to pi
+  #     uses: appleboy/ssh-action@master
+  #     with: 
+  #       #parameters for the ssh action
+  #       #ip address of the host
+  #       host: ${{ secrets.PI1_HOST }}
+  #       username: ${{ secrets.PI1_USERNAME }}
+  #       #private key for authentication 
+  #       key: ${{ secrets.SSH_PRIVATE_KEY }}
+  #   - name: Deploying on the pi
+  #     run: 
+
+
+
+
 
 
 
