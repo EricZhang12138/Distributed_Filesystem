@@ -108,27 +108,34 @@ jobs:
 
   deploy: 
     needs: build-and-push
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-    - name: ssh to pi
-      uses: appleboy/ssh-action@master
-      with: 
-        #parameters for the ssh action
-        #ip address of the host
-        host: ${{ secrets.PI1_HOST }}
-        username: ${{ secrets.PI1_USERNAME }}
-        #private key for authentication 
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          echo "Filesystem server container arrives"
-          cd ~/Documents/afs_server_deploy
-          docker pull ghcr.io/ericzhang12138/fs_server
-          docker stop fs_server || true
-          docker rm fs_server || true
-          docker run -d --name fs_server \
-            -p 50051:50051 \
-            -v $(pwd):/Filesystems/Test_env/Filesystem_server \
-            ghcr.io/ericzhang12138/fs_server
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Deploy Docker Container
+      run: |
+        echo "Filesystem server container arrives"
+        
+        # Navigate to your persistent directory on the Pi
+        cd ~/Documents/afs_server_deploy
+        
+        # Pull the new image
+        docker pull ghcr.io/ericzhang12138/fs_server
+        
+        # Stop and remove the old container (ignoring errors if it doesn't exist)
+        docker stop fs_server || true
+        docker rm fs_server || true
+        
+        # Run the new container
+        docker run -d --name fs_server \
+          -p 50051:50051 \
+          -v $(pwd):/Filesystems/Test_env/Filesystem_server \
+          ghcr.io/ericzhang12138/fs_server
 
 
 
