@@ -1,0 +1,8 @@
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/afs_client.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/afs_server.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/client_test.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/register_test.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/ci_test_client_1.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/ci_test_client_2.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/edit_cache.dir
+/Users/ericzhang/Documents/Filesystems/build/CMakeFiles/rebuild_cache.dir
