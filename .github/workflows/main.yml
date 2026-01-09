@@ -143,7 +143,7 @@ jobs:
         docker run -d --name fs_server \
           -p 50051:50051 \
           -v $(pwd):/Filesystems/Test_env/Filesystem_server \
-          ghcr.io/ericzhang12138/fs_server ./afs_server .
+          ghcr.io/ericzhang12138/fs_server ./afs_server ../Test_env/Filesystem_server
 
 
 

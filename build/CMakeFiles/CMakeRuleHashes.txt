@@ -1,2 +1,0 @@
-# Hashes of file build rules.
-904a28979e510cc4b6bf53f38ccc942b afs_operation.pb.cc
