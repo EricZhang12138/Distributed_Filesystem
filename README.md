@@ -28,6 +28,8 @@ The system consists of three main components:
 3.  **Communication**:
     * Data and metadata are serialized using **Protocol Buffers** and transmitted via **gRPC**.
 
+![architecture](images/architecture.png)
+
 ## Prerequisites
 
 * **C++ Compiler:** C++17 or higher (e.g., `g++`, `clang++`).
@@ -36,7 +38,7 @@ The system consists of three main components:
 * **gRPC & Protobuf:** `libgrpc++-dev`, `libprotobuf-dev`, `protobuf-compiler-grpc`.
 * **Boost:** Specifically `boost-system` and `boost-filesystem`.
 
-##  Build Instructions
+## Build Instructions
 
 You can build the project manually using CMake:
 
@@ -49,3 +51,7 @@ cmake ..
 
 # 3. Compile executables
 make
+```
+
+## CICD Architecture
+![CICD](images/CICD.png)
