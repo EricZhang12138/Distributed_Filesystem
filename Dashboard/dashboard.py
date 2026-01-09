@@ -67,6 +67,7 @@ def get_status():
         }
         return data
 
+
 # uvicorn dashboard:app --reload --host 0.0.0.0 --port 8000
 # host 0.0.0.0 means it listens for all ip addresses 
 # --port 8000, listens on port 8000

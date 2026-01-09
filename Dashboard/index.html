@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AFS Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #5568d3;
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.98);
+        }
+
+        .client-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .client-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 500;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .file-item {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 1.1rem;
+        }
+
+        .user-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .user-tag {
+            background: #e3e8ff;
+            color: #667eea;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+            font-style: italic;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c33;
+        }
+
+        .last-update {
+            text-align: center;
+            color: white;
+            margin-top: 20px;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Distributed Filesystem Dashboard</h1>
+
+        <div id="error-container"></div>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-number" id="client-count">0</div>
+                <div class="stat-label">Connected Clients</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="file-count">0</div>
+                <div class="stat-label">Active Files</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="status-header">
+                <h2>Connected Clients</h2>
+                <button class="refresh-btn" onclick="fetchStatus()">Refresh</button>
+            </div>
+            <div id="clients-container" class="loading">Loading...</div>
+        </div>
+
+        <div class="card">
+            <h2>File Usage</h2>
+            <div id="files-container" class="loading">Loading...</div>
+        </div>
+
+        <div class="last-update">
+            Last updated: <span id="last-update-time">Never</span>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/status';
+        let autoRefreshInterval;
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch(API_URL);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                updateDashboard(data);
+                clearError();
+            } catch (error) {
+                showError(`Failed to fetch data: ${error.message}`);
+            }
+        }
+
+        function updateDashboard(data) {
+            // Update stats
+            document.getElementById('client-count').textContent = data.connected_clients.length;
+            document.getElementById('file-count').textContent = Object.keys(data.file_to_clients).length;
+
+            // Update connected clients
+            const clientsContainer = document.getElementById('clients-container');
+            if (data.connected_clients.length === 0) {
+                clientsContainer.innerHTML = '<div class="empty-state">No clients connected</div>';
+            } else {
+                clientsContainer.innerHTML = '<div class="client-list">' +
+                    data.connected_clients.map(client =>
+                        `<div class="client-badge">${escapeHtml(client)}</div>`
+                    ).join('') +
+                    '</div>';
+            }
+
+            // Update file usage
+            const filesContainer = document.getElementById('files-container');
+            const fileEntries = Object.entries(data.file_to_clients);
+
+            if (fileEntries.length === 0) {
+                filesContainer.innerHTML = '<div class="empty-state">No files currently in use</div>';
+            } else {
+                filesContainer.innerHTML = fileEntries.map(([filename, users]) => `
+                    <div class="file-item">
+                        <div class="file-name">${escapeHtml(filename)}</div>
+                        <div class="user-tags">
+                            ${users.map(user => `<span class="user-tag">${escapeHtml(user)}</span>`).join('')}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // Update timestamp
+            document.getElementById('last-update-time').textContent = new Date().toLocaleTimeString();
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error-message">${escapeHtml(message)}</div>`;
+        }
+
+        function clearError() {
+            document.getElementById('error-container').innerHTML = '';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial fetch
+        fetchStatus();
+
+        // Auto-refresh every 5 seconds
+        autoRefreshInterval = setInterval(fetchStatus, 5000);
+
+        // Clear interval when page is hidden
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearInterval(autoRefreshInterval);
+            } else {
+                fetchStatus();
+                autoRefreshInterval = setInterval(fetchStatus, 5000);
+            }
+        });
+    </script>
+</body>
+</html>
