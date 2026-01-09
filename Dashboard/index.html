@@ -4,303 +4,147 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AFS Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        h1 {
-            color: white;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        .card h2 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 1.5rem;
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 10px;
-        }
-
-        .status-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .refresh-btn {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background 0.3s;
-        }
-
-        .refresh-btn:hover {
-            background: #5568d3;
-        }
-
-        .refresh-btn:active {
-            transform: scale(0.98);
-        }
-
-        .client-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .client-badge {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 16px;
-            border-radius: 8px;
-            text-align: center;
-            font-weight: 500;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        .file-item {
-            background: #f8f9fa;
-            border-left: 4px solid #667eea;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 6px;
-        }
-
-        .file-name {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-            font-size: 1.1rem;
-        }
-
-        .user-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .user-tag {
-            background: #e3e8ff;
-            color: #667eea;
-            padding: 6px 12px;
-            border-radius: 15px;
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #999;
-            padding: 40px;
-            font-style: italic;
-        }
-
-        .error-message {
-            background: #fee;
-            color: #c33;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            border-left: 4px solid #c33;
-        }
-
-        .last-update {
-            text-align: center;
-            color: white;
-            margin-top: 20px;
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #667eea;
-            font-size: 1.1rem;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-
-        .stat-box {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .stat-label {
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1>Distributed Filesystem Dashboard</h1>
+<body class="bg-slate-50 text-slate-800 p-6 min-h-screen">
 
-        <div id="error-container"></div>
+    <div x-data="dashboard()" x-init="startPolling()" class="max-w-5xl mx-auto space-y-6">
 
-        <div class="stats">
-            <div class="stat-box">
-                <div class="stat-number" id="client-count">0</div>
-                <div class="stat-label">Connected Clients</div>
+        <header class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-4">
+                <div class="bg-blue-600 p-3 rounded-xl shadow-lg shadow-blue-200">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-slate-800">AFS System Monitor</h1>
+                    <div class="flex items-center gap-2 text-sm font-medium">
+                        <span class="w-2.5 h-2.5 rounded-full" 
+                              :class="connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'"></span>
+                        <span x-text="connected ? 'System Operational' : 'Offline / Connecting...'"></span>
+                    </div>
+                </div>
             </div>
-            <div class="stat-box">
-                <div class="stat-number" id="file-count">0</div>
-                <div class="stat-label">Active Files</div>
+            
+            <div class="text-xs font-mono text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                STATUS API: <span class="text-slate-600">localhost:8000</span>
+            </div>
+        </header>
+
+        <div x-show="!connected" x-cloak class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 text-red-700">
+            <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            <div>
+                <p class="font-semibold">Connection Lost</p>
+                <p class="text-sm opacity-80">Make sure `dashboard.py` is running. Retrying...</p>
             </div>
         </div>
 
-        <div class="card">
-            <div class="status-header">
-                <h2>Connected Clients</h2>
-                <button class="refresh-btn" onclick="fetchStatus()">Refresh</button>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h2 class="font-semibold text-slate-700 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                        Connected Clients
+                    </h2>
+                    <span class="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full" x-text="data.connected_clients.length">0</span>
+                </div>
+                <div class="p-2 max-h-64 overflow-y-auto">
+                    <template x-if="data.connected_clients.length === 0">
+                        <div class="p-6 text-center text-slate-400 text-sm">No clients connected</div>
+                    </template>
+                    <ul class="space-y-1">
+                        <template x-for="client in data.connected_clients">
+                            <li class="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-lg transition-colors">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                                    <span x-text="client.slice(0,2).toUpperCase()"></span>
+                                </div>
+                                <span class="font-medium text-slate-700" x-text="client"></span>
+                                <div class="ml-auto w-2 h-2 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.6)]"></div>
+                            </li>
+                        </template>
+                    </ul>
+                </div>
             </div>
-            <div id="clients-container" class="loading">Loading...</div>
-        </div>
 
-        <div class="card">
-            <h2>File Usage</h2>
-            <div id="files-container" class="loading">Loading...</div>
-        </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h2 class="font-semibold text-slate-700 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        File Locks
+                    </h2>
+                    <span class="bg-amber-100 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full" x-text="Object.keys(data.file_to_clients).length">0</span>
+                </div>
+                <div class="p-2 max-h-64 overflow-y-auto">
+                    <template x-if="Object.keys(data.file_to_clients).length === 0">
+                        <div class="p-6 text-center text-slate-400 text-sm">No files currently tracked</div>
+                    </template>
+                    
+                    <div class="space-y-2">
+                        <template x-for="(users, filename) in data.file_to_clients">
+                            <div class="p-3 border border-slate-100 rounded-lg hover:border-slate-300 transition-colors">
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="font-mono text-sm text-slate-800 bg-slate-100 px-2 py-0.5 rounded" x-text="filename"></span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border"
+                                          :class="users.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-400 border-slate-200'"
+                                          x-text="users.length > 0 ? 'LOCKED' : 'IDLE'">
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <template x-if="users.length === 0">
+                                        <span class="text-xs text-slate-400 italic">No active users</span>
+                                    </template>
+                                    <template x-for="user in users">
+                                        <span class="inline-flex items-center gap-1 bg-white border border-slate-200 text-slate-600 text-xs px-2 py-1 rounded shadow-sm">
+                                            <div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
+                                            <span x-text="user"></span>
+                                        </span>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
 
-        <div class="last-update">
-            Last updated: <span id="last-update-time">Never</span>
         </div>
     </div>
 
     <script>
-        const API_URL = 'http://localhost:8000/api/status';
-        let autoRefreshInterval;
-
-        async function fetchStatus() {
-            try {
-                const response = await fetch(API_URL);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+        function dashboard() {
+            return {
+                connected: false,
+                data: {
+                    connected_clients: [],
+                    file_to_clients: {}
+                },
+                startPolling() {
+                    this.fetchData();
+                    setInterval(() => this.fetchData(), 2000); // Update every 2 seconds
+                },
+                async fetchData() {
+                    try {
+                        // We fetch from the localhost address defined in your Python file
+                        const response = await fetch('http://localhost:8000/api/status');
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        
+                        const jsonData = await response.json();
+                        this.data = jsonData;
+                        this.connected = true;
+                    } catch (error) {
+                        console.log("Connection failed:", error);
+                        this.connected = false;
+                        // Keep the UI logic intact even if empty, but mark as disconnected
+                    }
                 }
-
-                const data = await response.json();
-                updateDashboard(data);
-                clearError();
-            } catch (error) {
-                showError(`Failed to fetch data: ${error.message}`);
             }
         }
-
-        function updateDashboard(data) {
-            // Update stats
-            document.getElementById('client-count').textContent = data.connected_clients.length;
-            document.getElementById('file-count').textContent = Object.keys(data.file_to_clients).length;
-
-            // Update connected clients
-            const clientsContainer = document.getElementById('clients-container');
-            if (data.connected_clients.length === 0) {
-                clientsContainer.innerHTML = '<div class="empty-state">No clients connected</div>';
-            } else {
-                clientsContainer.innerHTML = '<div class="client-list">' +
-                    data.connected_clients.map(client =>
-                        `<div class="client-badge">${escapeHtml(client)}</div>`
-                    ).join('') +
-                    '</div>';
-            }
-
-            // Update file usage
-            const filesContainer = document.getElementById('files-container');
-            const fileEntries = Object.entries(data.file_to_clients);
-
-            if (fileEntries.length === 0) {
-                filesContainer.innerHTML = '<div class="empty-state">No files currently in use</div>';
-            } else {
-                filesContainer.innerHTML = fileEntries.map(([filename, users]) => `
-                    <div class="file-item">
-                        <div class="file-name">${escapeHtml(filename)}</div>
-                        <div class="user-tags">
-                            ${users.map(user => `<span class="user-tag">${escapeHtml(user)}</span>`).join('')}
-                        </div>
-                    </div>
-                `).join('');
-            }
-
-            // Update timestamp
-            document.getElementById('last-update-time').textContent = new Date().toLocaleTimeString();
-        }
-
-        function showError(message) {
-            const errorContainer = document.getElementById('error-container');
-            errorContainer.innerHTML = `<div class="error-message">${escapeHtml(message)}</div>`;
-        }
-
-        function clearError() {
-            document.getElementById('error-container').innerHTML = '';
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Initial fetch
-        fetchStatus();
-
-        // Auto-refresh every 5 seconds
-        autoRefreshInterval = setInterval(fetchStatus, 5000);
-
-        // Clear interval when page is hidden
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                clearInterval(autoRefreshInterval);
-            } else {
-                fetchStatus();
-                autoRefreshInterval = setInterval(fetchStatus, 5000);
-            }
-        });
     </script>
 </body>
 </html>
