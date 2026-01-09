@@ -94,17 +94,25 @@ jobs:
 
   build-and-push:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps: 
     - uses: actions/checkout@v2
     - name: Log in to GitHub Container Registry
-      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     - name: Build Docker Image
       run: docker build -t server .
     - name: tag for registry
       run: docker tag server ghcr.io/ericzhang12138/fs_server
     - name: push to registry
       run: docker push ghcr.io/ericzhang12138/fs_server
+    # CRITICAL STEP: Clean up to prevent SD card from filling up
+    - name: Prune Docker System
+      if: always()  # Run this even if the build fails
+      run: docker system prune -f
 
   deploy: 
     needs: build-and-push
