@@ -414,7 +414,18 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
         // update the file_map_open
     {
         std::lock_guard<std::mutex> lock(file_map_open_mutex);
-        file_map_open[path].erase(client_id); // add the path to the map and add the corresponding client
+        
+        auto it = file_map_open.find(path);
+        if (it != file_map_open.end()) {
+            it->second.erase(client_id);
+            
+            // Clean up empty entries
+            if (it->second.empty()) {
+                file_map_open.erase(it);
+            }
+        }
+        
+        std::cout << path << " is closed by " << client_id << std::endl;
     }
 
 
