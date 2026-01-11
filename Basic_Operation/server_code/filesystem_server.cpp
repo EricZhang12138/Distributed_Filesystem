@@ -317,6 +317,12 @@ grpc::Status FileSystem::open(grpc::ServerContext* context, const afs_operation:
         file_map[path].insert(client_id); // add the path to the map and add the corresponding client
     }
 
+    // update the file_map_open
+    {
+        std::lock_guard<std::mutex> lock(file_map_open_mutex);
+        file_map_open[path].insert(client_id); // add the path to the map and add the corresponding client
+    }
+
     // have to read the file in binary mode to avoid line ending translation
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()){
@@ -404,6 +410,13 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     file_change_callback_close(path, client_id, notif);
     std::cout << "[SERVER] Callback complete, returning OK" << std::endl;
     std::cout.flush();
+
+        // update the file_map_open
+    {
+        std::lock_guard<std::mutex> lock(file_map_open_mutex);
+        file_map_open[path].erase(client_id); // add the path to the map and add the corresponding client
+    }
+
 
     return grpc::Status::OK;
 }
@@ -628,10 +641,10 @@ grpc::Status FileSystem::GetStatus(grpc::ServerContext* context,
 
     // 2. Handle File Map (Same as before)
     {
-        std::lock_guard<std::mutex> lock(file_map_mutex);
+        std::lock_guard<std::mutex> lock(file_map_open_mutex);
         auto* response_map = response->mutable_file_to_clients();
 
-        for (const auto& [file_path, user_set] : file_map) {
+        for (const auto& [file_path, user_set] : file_map_open) {
             afs_operation::FileUsers file_users_msg;
             for (const auto& user_id : user_set) {
                 file_users_msg.add_users(user_id);

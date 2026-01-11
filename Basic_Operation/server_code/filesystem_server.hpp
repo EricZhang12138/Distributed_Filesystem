@@ -55,7 +55,12 @@ public:
     std::string root_dir;           // "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
     int starting_length;
     std::mutex file_map_mutex;
+    std::mutex file_map_open_mutex;
+    // this file_map is basically recording the list of clients that have the specific file in cache
     std::unordered_map<std::string, std::unordered_set<std::string>> file_map; // a map of file directories to a vector of userIDs
+    // this file_map_open is for dashboard to record the clients that actually currently have the specific file open
+    // this is different from file_map because we don't clean up in close() in file_map 
+    std::unordered_map<std::string, std::unordered_set<std::string>> file_map_open;
     void RunServer();
     FileSystem(std::string root_dir);
     
