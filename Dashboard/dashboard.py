@@ -16,17 +16,31 @@ class Dashboard:
         self.stub = None #afs_operation_pb2_grpc.operatorStub(self.channel)
         self.connected_clients: List[str] = []
         self.file_to_clients: Dict[str, List[str]] = {}
-    
+        self.server_base_dir: str
+
     def __enter__(self):
         print("Connecting to the AFS server...")
         self.channel = grpc.insecure_channel("localhost:50051")
         self.stub = afs_operation_pb2_grpc.operatorsStub(self.channel)
+        self.get_root_dir()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         print("system shutdown, closing grpc connection")
         self.channel.close()
     
+    def get_root_dir(self):
+        print("Dashboard getting root directory of the server")
+        request = afs_operation_pb2.InitialiseRequest()
+        request.code_to_initialise = "I want input/output directory"
+        try:
+            response = self.stub.request_dir(request)
+            self.server_base_dir = response.root_path
+        except grpc.RpcError as e:
+            print("gRPC error: ", e)
+            self.server_base_dir = ""
+
+      
     def get_data(self):
         print("Retrieve data from the filesystem server ...")
         request = afs_operation_pb2.GetStatusRequest()
@@ -34,12 +48,24 @@ class Dashboard:
             response = self.stub.GetStatus(request)
         except grpc.RpcError as e:
             print("gRPC error:", e)
-        
-        # Access the repeated string field 
+
+        # Access the repeated string field
         connected_clients = list(response.connected_clients)
         self.connected_clients = connected_clients
-        # Access the map<string, FileUsers> field
-        file_to_clients_dict = {k: list(v.users) for k, v in response.file_to_clients.items()}
+
+        # Access the map<string, FileUsers> field and strip base directory
+        file_to_clients_dict = {}
+        for filepath, users in response.file_to_clients.items():
+            # Strip the server base directory from the filepath
+            if self.server_base_dir and filepath.startswith(self.server_base_dir):
+                stripped_path = filepath[len(self.server_base_dir):]
+                # Ensure path starts with / if not empty
+                if stripped_path and not stripped_path.startswith('/'):
+                    stripped_path = '/' + stripped_path
+                file_to_clients_dict[stripped_path or '/'] = list(users.users)
+            else:
+                file_to_clients_dict[filepath] = list(users.users)
+
         self.file_to_clients = file_to_clients_dict
 
 # this FastAPI is like a API for the frontend and backend 

@@ -133,7 +133,7 @@
                         // We fetch from the localhost address defined in your Python file
                         const response = await fetch('http://localhost:8000/api/status');
                         if (!response.ok) throw new Error('Network response was not ok');
-                        
+
                         const jsonData = await response.json();
                         this.data = jsonData;
                         this.connected = true;
