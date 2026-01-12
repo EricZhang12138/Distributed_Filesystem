@@ -1,0 +1,82 @@
+--- 
+- name: Deploy AFS Server to Raspberry Pi
+  hosts: raspberry_pi
+  become: yes     # give sudo root privilige
+
+  vars:    # defining reusable variables in a playbook
+    container_registry: ghcr.io/ericzhang12138
+    image_name: fs_server
+    deploy_dir: /home/ericzhang/Documents/Filesystem/server
+
+  tasks:   # every single task uses an Ansible Module (An ACTION Ansible performs)
+    - name: Create deployment directory 
+      file:  # this creates the directory if it doesn't exist    <- MODULE
+        path: "{{deploy_dir}}"
+        state: directory
+        mode: '0755'
+
+    - name: Log into github container registry
+      community.docker.docker_login: # the full name of a module that handles Docker registry authentication
+        registry: ghcr.io          # specify the github registry
+        username: "{{github_username}}"
+        password: "{{github_password}}"
+      no_log: true # this makes sure there is no logging in Ansible so that my passwords are not shown 
+
+    - name: Pull the latest image from the registry
+      community.docker.docker_image:                   # <- MODULE
+        name: "{{container_registry}}/{{image_name}}"
+        source: pull     # you could do source: pull, source: build and such to specify how you want to get the image. Pull from a registry, build from a dockerfile
+        force_source: yes      # always force pull even if the image already exists 
+
+    - name: Stop the currently running container
+      community.docker.docker_container:              # <- MODULE
+        name: fs_server   # container name
+        state: stopped    # desired state
+      ignore_errors: yes   # even if the container doesn't exist, we don't produce errors
+
+    - name: Remove old container
+      community.docker.docker_container:
+        name: fs_server
+        state: absent
+      ignore_errors: yes
+
+    - name: Start the new container 
+      community.docker.docker_container:              # <- MODULE
+        name: fs_server
+        image: "{{container_registry}}/{{image_name}}"
+        state: started 
+        restart_policy: unless-stopped  # automatic restart when container crashes, server reboots and docker daemon restarts 
+        ports: 
+          - "50051:50051"
+        volumes:
+          - "{{deploy_dir}}:/Filesystems/Test_env/Filesystem_server"
+    
+    - name: Clean up old images
+      community.docker.docker_prune:
+        images: yes
+        images_filters: 
+          dangling: true   # dangling images, happens when you pull an image of the same name and the old image becomes dangling
+
+    
+
+  
+
+#How Ansible Works Under the Hood
+#You run ansible-playbook on your machine (or GitHub Actions runner)
+#Ansible connects via SSH to your Raspberry Pi
+#Ansible copies Python modules to a temporary directory on the Pi
+#Ansible executes those Python modules using the Python interpreter on the Pi
+#Results are sent back to your machine
+#Ansible cleans up the temporary files
+
+
+
+# dry run: 
+# ansible-playbook -i inventory.ini deploy.yml --check \
+#  --extra-vars "github_username=EricZhang12138" \
+#  --extra-vars "github_password=YOUR_GITHUB_TOKEN_HERE"
+
+# run: 
+#ansible-playbook -i inventory.ini deploy.yml \
+#  --extra-vars "github_username=EricZhang12138" \
+#  --extra-vars "github_password=YOUR_GITHUB_TOKEN_HERE"

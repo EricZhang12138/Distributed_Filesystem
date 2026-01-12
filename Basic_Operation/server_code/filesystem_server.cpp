@@ -419,7 +419,6 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
         if (it != file_map_open.end()) {
             it->second.erase(client_id);
             
-            // Clean up empty entries
             if (it->second.empty()) {
                 file_map_open.erase(it);
             }
