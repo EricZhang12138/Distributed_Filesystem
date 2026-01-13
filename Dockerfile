@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /Filesystems/build
 
-COPY --from=builder /Filesystems/build/afs_server .
+COPY --from=builder /Filesystems/build .
 WORKDIR /Filesystems/Test_env
 COPY Test_env .
 WORKDIR /Filesystems/build
