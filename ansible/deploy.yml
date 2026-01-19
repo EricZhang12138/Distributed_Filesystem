@@ -26,8 +26,8 @@
       community.docker.docker_image:                   # <- MODULE
         name: "{{container_registry}}/{{image_name}}"
         source: pull     # you could do source: pull, source: build and such to specify how you want to get the image. Pull from a registry, build from a dockerfile
-        force_source: yes      # always force pull even if the image already exists 
-
+        # force_source: yes      # always force pull even if the image already exists 
+        # to ensure idempotency, we don't always force pull. If we pull once and then pull again but the code didn't change, we want to make sure the image isn't pulled again
     - name: Stop the currently running container
       community.docker.docker_container:              # <- MODULE
         name: fs_server   # container name
@@ -50,7 +50,7 @@
           - "50051:50051"
         volumes:
           - "{{deploy_dir}}:/Filesystems/Test_env/Filesystem_server"
-    
+
     - name: Clean up old images
       community.docker.docker_prune:
         images: yes

@@ -45,8 +45,48 @@
             </div>
         </div>
 
+        <!-- Process Metrics Card -->
+        <div x-show="data.process" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h2 class="font-semibold text-slate-700 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                    Server Process
+                </h2>
+                <span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full">RUNNING</span>
+            </div>
+            <div class="p-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-slate-50 rounded-xl p-4 text-center">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">PID</div>
+                        <div class="text-xl font-bold text-slate-700" x-text="data.process?.pid || '-'"></div>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-4 text-center">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">CPU</div>
+                        <div class="text-xl font-bold text-blue-600" x-text="(data.process?.cpu_percent || 0).toFixed(1) + '%'"></div>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-4 text-center">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Memory (RSS)</div>
+                        <div class="text-xl font-bold text-purple-600" x-text="(data.process?.memory_rss_mb || 0) + ' MB'"></div>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-4 text-center">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Threads</div>
+                        <div class="text-xl font-bold text-amber-600" x-text="data.process?.num_threads || '-'"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Server Process Not Found Warning -->
+        <div x-show="connected && !data.process" x-cloak class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 text-amber-700">
+            <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            <div>
+                <p class="font-semibold">Server Process Not Found</p>
+                <p class="text-sm opacity-80">The afs_server process is not running on this machine.</p>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
+
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h2 class="font-semibold text-slate-700 flex items-center gap-2">
@@ -122,7 +162,8 @@
                 connected: false,
                 data: {
                     connected_clients: [],
-                    file_to_clients: {}
+                    file_to_clients: {},
+                    process: null
                 },
                 startPolling() {
                     this.fetchData();

@@ -8,6 +8,7 @@ from build import afs_operation_pb2_grpc, afs_operation_pb2
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware 
+import psutil
 
 class Dashboard:
     def __init__(self):
@@ -39,9 +40,35 @@ class Dashboard:
         except grpc.RpcError as e:
             print("gRPC error: ", e)
             self.server_base_dir = ""
+    
+    
+    def get_process_metric(self):
+        server_process = None
+        print("Track the server's process states")
+        for proc in psutil.process_iter(['pid', 'name']):
+            # Check for afs_server (the actual binary name)
+            if proc.info['name'] == 'afs_server':
+                server_process = proc
+                break
+        if not server_process:
+            print("Server process not found!")
+            return None
 
-      
-    def get_data(self):
+        cpu_percent = server_process.cpu_percent(interval=0.1)  # shorter interval for responsiveness
+        memory_info = server_process.memory_info()
+        num_threads = server_process.num_threads()
+
+        return {
+            "pid": server_process.pid,
+            "cpu_percent": cpu_percent,
+            "memory_rss_mb": round(memory_info.rss / (1024 * 1024), 2),  # Convert to MB
+            "memory_vms_mb": round(memory_info.vms / (1024 * 1024), 2),
+            "num_threads": num_threads
+        }
+
+
+        
+    def get_application_metric(self):
         print("Retrieve data from the filesystem server ...")
         request = afs_operation_pb2.GetStatusRequest()
         try:
@@ -86,10 +113,13 @@ app.add_middleware(
 def get_status():
     " Get current filesystem status "
     with dashboard: 
-        dashboard.get_data()
+        dashboard.get_application_metric()
+        
+        process_metric = dashboard.get_process_metric()
         data = {
             "connected_clients": dashboard.connected_clients,
-            "file_to_clients": dashboard.file_to_clients
+            "file_to_clients": dashboard.file_to_clients,
+            "process": process_metric  # Will be None if server not found
         }
         return data
 
