@@ -51,6 +51,12 @@ cmake ..
 
 # 3. Compile executables
 make
+
+# 4. start the server 
+./afs_server ../Test_env/Filesystem_server
+
+# 5. start the client locally for testing "-f makes it run in the foreground"
+./afs_client ../Test_env/client_1
 ```
 
 ## CICD Architecture
