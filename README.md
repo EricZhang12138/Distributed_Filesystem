@@ -56,7 +56,7 @@ make
 ./afs_server ../Test_env/Filesystem_server
 
 # 5. start the client locally for testing "-f makes it run in the foreground"
-./afs_client ../Test_env/client_1
+./afs_client -f ../Test_env/client_1
 ```
 
 ## CICD Architecture
