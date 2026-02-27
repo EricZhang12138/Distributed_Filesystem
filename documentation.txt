@@ -1,0 +1,506 @@
+❯ Don't change anything in the current codebase! Have a read through this distributed filesystem and tell me how a database system could benefit this current system  
+
+⏺ Let me explore the codebase first to understand the architecture.
+
+⏺ Explore(Explore distributed filesystem codebase)
+  ⎿  Done (42 tool uses · 67.6k tokens · 1m 25s)
+  (ctrl+o to expand)
+
+⏺ I've done a thorough read-through of the entire codebase. Here's my analysis of how a database system could benefit your distributed filesystem:
+
+  ---
+  How a Database Could Benefit Your AFS System
+
+  1. Metadata Persistence & Crash Recovery
+
+  Current state: All metadata lives in in-memory data structures (file_map, clients_db, file_map_open, subscribers). If the server crashes or restarts, all tracking of which clients have which files cached is lost.
+   Clients will continue operating on stale caches with no invalidation until they happen to re-register.
+
+  With a database: A persistent store (e.g., SQLite for single-node, PostgreSQL for multi-node) would survive server restarts. On recovery, the server would immediately know which clients held which files, enabling
+   it to issue invalidation notices or at least detect stale caches. This turns your system from "hope nothing crashes" to genuinely fault-tolerant.
+
+  ---
+  2. Richer File Metadata & Versioning
+
+  Current state: File metadata comes entirely from stat() system calls. Versioning relies on mtime nanosecond timestamps, which are fragile — two rapid writes within the same nanosecond could be invisible to the
+  consistency mechanism.
+
+  With a database: You could maintain a proper version history table:
+  - Monotonically increasing version numbers per file (no timestamp collisions)
+  - Change history / audit log (who modified what, when)
+  - Conflict detection for concurrent writes (currently unhandled — last-close-wins)
+
+  ---
+  3. Scalable Client & Session Management
+
+  Current state: Client registration is an in-memory unordered_set<string>. There's no persistence of session state, no way to track historical connections, and no mechanism to detect zombie clients whose
+  subscriber streams died silently.
+
+  With a database: A sessions table with heartbeat timestamps, connection metadata, and lease expiry would enable:
+  - Detection of stale/dead clients via expired leases
+  - Analytics on client connection patterns
+  - Graceful cleanup of resources tied to disconnected clients
+
+  ---
+  4. File Locking & Concurrency Control
+
+  Current state: There is no distributed lock service. Your ci_test_client_1 and ci_test_client_2 tests demonstrate concurrent writes, but the system uses a last-writer-wins strategy. If two clients have the same
+  file open and both modify it, whichever calls close() last overwrites the other's changes silently.
+
+  With a database: A lock table could provide:
+  - Advisory or mandatory file-level locks with owner tracking
+  - Read/write lock semantics (multiple readers, exclusive writer)
+  - Lock timeout and automatic expiry for dead clients
+  - Deadlock detection if the system ever needs multi-file atomic operations
+
+  ---
+  5. Efficient Directory Listing & Search
+
+  Current state: ls() calls the OS-level opendir()/readdir() every time. getattr() calls stat() every time. There's no indexing, no search capability, and listing large directories requires a full filesystem scan
+  on every request.
+
+  With a database: An indexed file/directory table would enable:
+  - O(1) lookups instead of filesystem traversals
+  - Full-text search across filenames and paths
+  - Hierarchical queries (find all files under a subtree)
+  - Cached metadata that's faster than repeated stat() calls, with invalidation on write
+
+  ---
+  6. Dashboard & Monitoring Analytics
+
+  Current state: The dashboard (dashboard.py) queries live state via gRPC. It can only show the current snapshot — there's no historical data. Once a client disconnects or a file is closed, that information
+  vanishes.
+
+  With a database: A time-series or event log table would provide:
+  - Historical access patterns (which files are hot, which clients are most active)
+  - Trend analysis for capacity planning
+  - Alerting on anomalies (sudden spike in file operations, unusual client behavior)
+  - Persistent process metrics history (CPU, memory over time) instead of point-in-time snapshots
+
+  ---
+  7. Multi-Server Replication & Horizontal Scaling
+
+  Current state: The architecture is strictly single-server. The file_map and subscriber state have no replication mechanism. If you wanted a second server for redundancy or load balancing, there's no shared state
+  layer.
+
+  With a database: A shared database (e.g., PostgreSQL, CockroachDB) between multiple server instances would enable:
+  - Consistent metadata across replicas
+  - Leader election or consensus-based file ownership
+  - Horizontal scaling: clients connect to any server, all see the same metadata
+  - Geographic distribution with replicated state
+
+  ---
+  8. Access Control & Authorization
+
+  Current state: There is no authentication or authorization. Any client with network access can read, write, or delete any file. The uid/gid fields in GetAttrResponse are populated but never enforced.
+
+  With a database: A users/permissions table would provide:
+  - Per-file or per-directory ACLs
+  - User authentication (client_id mapped to authenticated identities)
+  - Audit trails for compliance (who accessed what and when)
+
+  ---
+  Summary Table
+
+  ┌──────────────────────┬──────────────────────┬───────────────────────────────────────┐
+  │       Concern        │   Current Approach   │           Database Benefit            │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Metadata persistence │ In-memory only       │ Survives crashes                      │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Versioning           │ mtime timestamps     │ Monotonic version numbers             │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Client tracking      │ In-memory set        │ Persistent sessions with lease expiry │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Concurrency          │ Last-writer-wins     │ Distributed locks                     │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Directory queries    │ readdir() every time │ Indexed lookups                       │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Monitoring history   │ Snapshot only        │ Time-series analytics                 │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Scaling              │ Single server        │ Shared state across replicas          │
+  ├──────────────────────┼──────────────────────┼───────────────────────────────────────┤
+  │ Access control       │ None                 │ ACL tables                            │
+  └──────────────────────┴──────────────────────┴───────────────────────────────────────┘
+
+  The biggest immediate wins would be crash recovery (items 1 & 3) and concurrency control (item 4), as these address correctness gaps in the current system. The others are valuable but more about scaling and
+  operability.
+
+✻ Sautéed for 2m 6s
+
+❯ so to implement a lock server, it is essentially just a database in some sense?                                                                                                                                     
+                                                                                   
+⏺ Yes and no — they share the same core idea but diverge in what they optimize for.                                                                                                                                   
+                                                                                                                                                                                                                      
+  At its heart, a lock server is just consistent, shared state — which is exactly what a database is. A lock is really just a row:                                                                                    
+                                                                                                                                                                                                                      
+  | file_path        | owner_client_id | lock_type | acquired_at | expires_at |                                                                                                                                       
+  |------------------|-----------------|-----------|-------------|------------|                                                                                                                                       
+  | /docs/report.txt | client-abc-123  | WRITE     | 1709000000  | 1709000030 |                                                                                                                                       
+
+  Acquiring a lock = conditional insert ("insert if no row exists for this path"). Releasing = delete. You could literally implement your lock server as a SQLite table with a UNIQUE constraint on file_path and it
+  would work for a single-server setup like yours.
+
+  Where they diverge
+
+  A general-purpose database optimizes for rich queries, durability, and flexible schemas. A dedicated lock server optimizes for a narrower set of things:
+
+  - Lease expiry — locks must auto-release when a client dies. A database doesn't do this natively; you'd need a background reaper thread checking expires_at. A lock server like Chubby or ZooKeeper has this built
+  into the protocol via session heartbeats.
+  - Strong consistency above all else — a lock server can never give two clients the same write lock, even during network partitions. Databases offer this too, but lock servers are purpose-built around it. They use
+   consensus protocols (Paxos, Raft) specifically tuned for this guarantee.
+  - Liveness over throughput — a lock server needs to answer "can I take this lock?" in microseconds with minimal overhead. It doesn't need joins, indexes, or complex query planning. It's a very thin state machine.
+
+  The real-world spectrum
+
+  In practice, the line is blurry. The industry's most prominent lock/coordination services are essentially tiny, strongly-consistent key-value stores:
+
+  - Google Chubby — a lock service that is internally a small replicated file system (basically a database)
+  - ZooKeeper — a "coordination service" that's really a hierarchical key-value store with ephemeral nodes (nodes that auto-delete when the session dies — exactly lease expiry)
+  - etcd — a distributed key-value store that people use for locking via its lease API
+
+  So your intuition is right. The conceptual model is: lock server = database with a very small schema, very strong consistency, and built-in lease/session semantics.
+
+  For your system specifically, since you're running a single afs_server, a SQLite-backed lock table would be completely sufficient — you don't need the distributed consensus complexity of ZooKeeper/etcd because
+  your metadata authority is already centralized. You'd only need a full distributed lock service if you scaled to multiple server replicas.
+
+❯ so if I want to add a pure database like postgresql or redis, what would you suggest me do mostly                                                                                                                   
+                                                                                                     
+⏺ Good question. The answer depends on what problem you're solving first. Given your system, here's how I'd think about it:                                                                                           
+                                                                                                                                                                                                                      
+  Redis is the natural fit for your system                                                                                                                                                                            
+                                                                                                                                                                                                                      
+  Your server state is already structured as in-memory maps and sets:                                                                                                                                                 
+                                                                                                                                                                                                                      
+  unordered_map<string, unordered_set<string>> file_map;      // file → clients                                                                                                                                       
+  unordered_set<string> clients_db;                            // connected clients
+  unordered_map<string, shared_ptr<NotificationQueue>> subscribers;
+
+  These map almost 1:1 to Redis data structures:
+
+  ┌─────────────────────────────────────┬──────────────────────────────────────────────────────────┐
+  │         Your C++ structure          │                     Redis equivalent                     │
+  ├─────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ file_map[path] = {client1, client2} │ SADD file:/docs/a.txt client1 client2                    │
+  ├─────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ clients_db = {client1, client2}     │ SADD clients client1 client2                             │
+  ├─────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ Lock table                          │ SET lock:/docs/a.txt client1 EX 30 (auto-expires in 30s) │
+  └─────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+
+  The key things Redis gives you that you don't have today:
+
+  1. Crash recovery for free — Your in-memory state survives server restarts via RDB snapshots or AOF logging. Right now if afs_server dies, all client-to-file tracking is gone.
+
+  2. Lock server with built-in lease expiry — SET lock:/path client_id NX EX 30 is an atomic "acquire lock if not held, auto-release in 30 seconds." That's your entire lock server in one command. No reaper thread
+  needed.
+
+  3. Pub/Sub could simplify your notification system — Your current NotificationQueue with condition variables and per-client threads is complex. Redis PUBLISH/SUBSCRIBE channels could replace that plumbing, though
+   you'd still need the gRPC stream to push to clients.
+
+  4. Lightweight enough for your Raspberry Pi — Redis idles at ~5MB of RAM. PostgreSQL would be significantly heavier on that hardware.
+
+  When you'd want PostgreSQL instead
+
+  PostgreSQL becomes the better choice if you eventually want:
+  - Version history / audit logs (who changed what, when)
+  - Access control tables (users, permissions, ACLs)
+  - Complex dashboard queries ("show me the 10 most accessed files this week")
+  - Relational integrity (foreign keys between clients, sessions, files)
+
+  But that's a second phase. Right now your bottleneck is state durability and locking, not analytics.
+
+  What I'd suggest you do, in order
+
+  1. Add Redis as a state backend for file_map and clients_db — replace the in-memory maps with Redis calls. Your server becomes stateless and restartable.
+  2. Implement file locking via Redis — add LOCK/UNLOCK RPCs to your proto, backed by Redis SET ... NX EX. Clients call lock before open, unlock on close. This fixes the last-writer-wins problem.
+  3. Add session leases — when a client calls request_dir(), create a Redis key with TTL for that client session. Have clients send periodic heartbeats to refresh it. When the key expires, the server knows the
+  client is dead and can clean up its locks and file_map entries.
+  4. Later, if needed — add PostgreSQL alongside Redis for the analytical/audit layer.
+
+  Redis fits because your problem is fundamentally about fast, ephemeral, structured state with expiry semantics — exactly what Redis was built for. PostgreSQL would be over-engineering it at this stage, especially
+   on a Pi.
+
+✻ Cooked for 37s
+
+❯ But this is a AFS filesystem and being stateful is critical in maintaining the performance of the system. if you have many reads and writes happening at the same time, you can't query the redis this often        
+  without experiencing delays.                                                                                                                                                                                       
+                                                                                                                                                                                                                      
+⏺ You're absolutely right, and that's an important correction. On the hot path — every open(), close(), read(), getattr() — you're hitting those in-memory maps. Adding a network round-trip to Redis on every FUSE   
+  operation would kill your latency. The whole point of AFS-style caching is to minimize remote calls.                                                                                                                
+                                                                                                                                                                                                                      
+  The right approach is: keep your in-memory state as the primary query path, and use the database as a write-behind durability layer.
+                                                                                                                                                                                                                      
+  The pattern: Memory-first, persist asynchronously                                                                                                                                                                 
+
+  FUSE call → gRPC → server in-memory maps (fast, as today)
+                           |
+                           └──→ async write to Redis/DB (background, non-blocking)
+
+  Your hot-path code stays essentially the same. The database only gets touched in two situations:
+
+  1. Background persistence (write-behind) — When state changes (client connects, file_map updated, lock acquired), you queue the change and a background thread flushes it to the database. The gRPC call returns
+  immediately without waiting. If the write to Redis fails or is slow, the server doesn't care — it already has the truth in memory.
+
+  2. Cold start recovery (read-ahead) — When afs_server starts up, before accepting connections, it loads the persisted state from Redis back into your in-memory maps. This is the only time you query the database
+  on the critical path, and it only happens once.
+
+  So the database doesn't replace your maps — it shadows them. Your server is still stateful, still fast, but now it's also recoverable.
+
+  What this looks like concretely
+
+  Your server already has the in-memory structures. You'd add a thin persistence layer:
+
+  - State change happens (e.g., new entry in file_map) → push an event to a lock-free queue
+  - Background thread drains the queue and writes to Redis (SADD, SET, etc.)
+  - On startup → load_state_from_redis() populates all the maps before the gRPC server starts listening
+  - Locks are the one exception where you might want synchronous writes — acquiring a lock should be durable before you confirm it, but lock acquisition is infrequent compared to reads/writes
+
+  Why this works for AFS specifically
+
+  AFS's performance comes from the callback contract: once a client caches a file, it never talks to the server again until it gets invalidated. So your server's hot path is really just:
+
+  - open() — check file_map, stream file, update map
+  - close() — receive file, update map, notify subscribers
+  - subscribe() — long-lived stream, mostly idle
+
+  These are already infrequent per-file operations (not per-byte). The async persistence adds negligible overhead because you're just appending to a queue — the actual Redis write happens off the critical path.
+
+  The expensive mistake would be replacing file_map[path].find(client_id) (nanoseconds) with a Redis SISMEMBER call (hundreds of microseconds over loopback, milliseconds over network). Your instinct to keep that
+  in-memory is correct.
+
+✻ Brewed for 34s                                                                                                                                                                                                      
+   
+❯ Then for the write behind cache shouold I use Redis or Postgresql                                                                                                                                                   
+                                                                                                                                                                                                                    
+⏺ For a write-behind durability layer, PostgreSQL.                                                                                                                                                                    
+                                                                                                                                                                                                                      
+  The reasoning is simple: the entire purpose of this layer is to guarantee that state survives a crash. That's durability — and that's exactly what PostgreSQL is built around.                                      
+                                                                                                                                                                                                                    
+  Why not Redis here                                                                                                                                                                                                  
+                                                                                                                                                                                                                      
+  Redis is fundamentally an in-memory store with optional persistence bolted on. Its two persistence modes both have gaps:
+
+  - RDB snapshots — periodic, so you lose everything between snapshots. Server crashes at the wrong moment and your last 30 seconds of state changes are gone.
+  - AOF with appendfsync always — gives you durability, but now you're forcing an fsync on every write, fighting against Redis's design. At that point you're paying the cost of a durable store without getting the
+  benefits of one.
+
+  You'd also be running two in-memory stores holding the same data — your server's maps and Redis's copies. That's redundant. The whole point is to offload durability to something that handles it natively.
+
+  Why PostgreSQL fits
+
+  When a background thread flushes a state change to PostgreSQL and gets an acknowledgment, that write is durable. WAL + fsync guarantees it. That's the only contract you need from this layer.
+
+  And since it's off the hot path, PostgreSQL's write latency (a few milliseconds) is irrelevant — your background thread can batch multiple changes into a single transaction:
+
+  BEGIN;
+  INSERT INTO file_cache_map (file_path, client_id) VALUES (...), (...), (...);
+  INSERT INTO client_sessions (client_id, last_seen) VALUES (...) ON CONFLICT DO UPDATE ...;
+  COMMIT;
+
+  One round-trip, multiple state changes persisted atomically.
+
+  The lock case seals it
+
+  You identified locks as the one place where persistence should be synchronous. PostgreSQL gives you SELECT ... FOR UPDATE and row-level locking with full ACID semantics. A lock acquisition becomes:
+
+  INSERT INTO file_locks (file_path, owner_client_id, expires_at)
+  VALUES ('/docs/a.txt', 'client-abc', NOW() + INTERVAL '30 seconds')
+  ON CONFLICT (file_path) DO NOTHING
+  RETURNING *;
+
+  If you get a row back, you got the lock. If not, someone else holds it. Atomic, durable, no race conditions. Redis SET NX does the same thing, but without the durability guarantee that matters when your server
+  crashes mid-operation.
+
+  Summary
+
+  ┌──────────────────────┬──────────────────────────────────┬─────────────────────────────┐
+  │       Concern        │              Redis               │         PostgreSQL          │
+  ├──────────────────────┼──────────────────────────────────┼─────────────────────────────┤
+  │ Write durability     │ Weak (best-effort)               │ Guaranteed (WAL + fsync)    │
+  ├──────────────────────┼──────────────────────────────────┼─────────────────────────────┤
+  │ Crash recovery       │ May lose recent state            │ Complete recovery           │
+  ├──────────────────────┼──────────────────────────────────┼─────────────────────────────┤
+  │ Lock atomicity       │ SET NX (in-memory only)          │ ACID transactions           │
+  ├──────────────────────┼──────────────────────────────────┼─────────────────────────────┤
+  │ Resource overhead    │ Redundant second in-memory store │ Disk-backed, complementary  │
+  ├──────────────────────┼──────────────────────────────────┼─────────────────────────────┤
+  │ Future extensibility │ Limited query capability         │ Audit logs, analytics, ACLs │
+  ├──────────────────────┼──────────────────────────────────┼─────────────────────────────┤
+  │ Raspberry Pi         │ Light                            │ Heavier, but manageable     │
+  └──────────────────────┴──────────────────────────────────┴─────────────────────────────┘
+
+  Redis is the right tool when you need it as your primary fast-access store. But you already have that — it's your in-memory maps. What you're missing is the durability underneath, and that's PostgreSQL's entire
+  reason for existing.
+
+✻ Worked for 39s
+
+❯ So to add postgreSQL, do I just spin up a new file and then create a class around the database so that it is encapsulated and then import the class to another file so that it could be used by the filesystem      
+  logic? Don't rush to change my code, I am a beginner in postgresql so I want to learn                                                                                                                              
+                                                                                                                                                                                                                      
+⏺ Yes, that's exactly the right approach. But before you write any C++ code, there are a few layers to understand:                                                                                                    
+                                                                                                                                                                                                                      
+  PostgreSQL runs as a separate service                                                                                                                                                                               
+   
+  PostgreSQL isn't a library you link into your binary (that would be SQLite). It's a standalone server process with its own storage. So your architecture becomes:                                                   
+                                                                                                                                                                                                                    
+  afs_server (your C++ process)
+      |
+      | TCP connection (localhost:5432)
+      |
+  PostgreSQL server (separate process)
+      |
+      | WAL + fsync
+      |
+    Disk
+
+  You'd run it alongside your server — either natively on the Pi or as another container in your docker-compose.yml.
+
+  You need a client library
+
+  Your C++ code talks to PostgreSQL through a client library. The two main options:
+
+  - libpq — the official C library, low-level, manual memory management
+  - libpqxx — C++ wrapper around libpq, RAII-based, feels more natural in your codebase
+
+  Since your codebase is modern C++ (smart pointers, STL containers), libpqxx is the better fit.
+
+  Then yes — a class that encapsulates it
+
+  You'd create something like a StateStore class that owns the database connection and exposes methods that match your state operations. Your server code never writes SQL directly — it just calls methods on this
+  class.
+
+  The file structure would look like:
+
+  Basic_Operation/
+    server_code/
+      filesystem_server.cpp      ← existing, calls StateStore methods
+      filesystem_server.hpp      ← existing, holds a StateStore member
+      state_store.cpp            ← new, implements the DB logic
+      state_store.hpp            ← new, defines the class interface
+
+  What the class interface would look like conceptually
+
+  Think of it as mirroring the operations you already do on your in-memory maps:
+
+  class StateStore {
+  public:
+      StateStore(const std::string& connection_string);
+      ~StateStore();
+
+      // Schema setup — runs once on first launch
+      void initialize_tables();
+
+      // Mirror of your file_map operations
+      void add_client_to_file(const std::string& filepath, const std::string& client_id);
+      void remove_client_from_file(const std::string& filepath, const std::string& client_id);
+
+      // Mirror of your clients_db operations
+      void register_client(const std::string& client_id);
+      void unregister_client(const std::string& client_id);
+
+      // Lock operations (synchronous — the one hot-path exception)
+      bool try_acquire_lock(const std::string& filepath, const std::string& client_id, int ttl_seconds);
+      void release_lock(const std::string& filepath, const std::string& client_id);
+
+      // Cold start recovery
+      std::unordered_map<std::string, std::unordered_set<std::string>> load_file_map();
+      std::unordered_set<std::string> load_clients();
+
+  private:
+      pqxx::connection conn_;
+  };
+
+  How it connects to your server
+
+  In filesystem_server.hpp, you'd add it as a member:
+
+  class FileSystemServer {
+      // ... your existing maps stay exactly as they are ...
+      std::unordered_map<std::string, std::unordered_set<std::string>> file_map;
+      std::unordered_set<std::string> clients_db;
+
+      // New: persistence layer
+      StateStore state_store_;
+  };
+
+  Then in your existing server logic, after you modify an in-memory map, you also queue or call the corresponding StateStore method. The maps remain your source of truth for reads — the StateStore is just for
+  durability.
+
+  The learning path I'd suggest
+
+  Before writing any C++ integration:
+
+  1. Install PostgreSQL and just play with it from the command line (psql). Create a database, create tables, insert/query data. Get comfortable with SQL.
+  2. Design your schema — figure out what tables you need and what columns they have. This is the most important step. Sketch it on paper.
+  3. Write a small standalone C++ program that connects to PostgreSQL with libpqxx, creates a table, inserts a row, and reads it back. Get the build system working (CMake find_package or linking manually).
+  4. Then integrate into your server by creating the StateStore class.
+
+  Step 2 is where most of the thinking happens. Step 3 is where most of the frustration happens (linking C++ libraries is never fun). Step 4 is straightforward once the first three are done.
+
+  Want me to walk you through any of these steps in more detail?
+
+❯ in the example you give me, what is that lock operations? Are you implementing the lock server as well or something                                                                                                 
+                                                                                                                       
+⏺ No, not a separate lock server. Remember earlier when you said a lock server is essentially just a database? This is exactly that — it's just another table in the same PostgreSQL instance you're already adding.  
+                                                                                                                                                                                                                    
+  Right now your system has the last-writer-wins problem:                                                                                                                                                             
+                                                                                                                                                                                                                      
+  Client A: open(file.txt) → gets copy                                                                                                                                                                                
+  Client B: open(file.txt) → gets copy                                                                                                                                                                                
+  Client A: writes "hello", close() → uploads to server
+  Client B: writes "world", close() → uploads to server, overwrites Client A's changes silently
+
+  The lock operations in that class are just two SQL operations against a file_locks table sitting next to your file_map and clients_db tables:
+
+  PostgreSQL
+  ├── file_cache_map table    ← which clients cache which files
+  ├── client_sessions table   ← connected clients
+  └── file_locks table        ← who is currently allowed to write to what
+
+  try_acquire_lock is essentially: "insert a row if one doesn't already exist for this file." If the insert succeeds, you got the lock. If it fails (row already exists), someone else holds it.
+
+  release_lock is: "delete that row."
+
+  That's it. No separate service, no extra infrastructure. It's just one more table in the database you're already setting up. The database's ACID guarantees ensure two clients can never both succeed at inserting a
+   lock row for the same file — which is the entire point.
+
+  The reason I put it in the StateStore class is that it belongs with the rest of your persisted state. It's not a separate system — it's just another piece of state that happens to need synchronous writes (you
+  want to confirm the lock is durable before telling the client "you have the lock") unlike the file_map writes which can be async.
+
+❯ if I remember right, I didn't have the file_lock map yet, are you suggesting me add it and then also implement corresponding feature for the database?                                                              
+                                                                                                                                                          
+⏺ Yes, exactly. Your codebase doesn't have locking at all right now. I'm suggesting you add it as a new feature, and since you're already adding PostgreSQL, you build it on top of the database directly.            
+                                                                                                                                                                                                                    
+  But here's the thing — locks are different from your file_map and clients_db. Remember the architecture we discussed:                                                                                               
+                                                                                                                                                                                                                    
+  - file_map → in-memory first, write-behind to PostgreSQL (async)                                                                                                                                                    
+  - clients_db → in-memory first, write-behind to PostgreSQL (async)                                                                                                                                                
+  - file_locks → PostgreSQL first (synchronous)
+
+  Locks are the exception. You don't want a write-behind pattern here because if your server crashes right after granting a lock in memory but before it persists to the database, the lock is lost. On restart,
+  another client could acquire the same lock and you get data corruption.
+
+  So for locks, PostgreSQL is the source of truth:
+
+  Client calls open(file.txt) for writing
+      → server hits PostgreSQL: "try to insert a lock row"
+      → PostgreSQL says success → tell client "go ahead"
+      → PostgreSQL says conflict → tell client "file is locked by someone else"
+
+  This is fine performance-wise because lock acquisition only happens on open() and release() — not on every read() or write(). A few milliseconds for a PostgreSQL round-trip during file open is negligible compared
+   to the time spent actually streaming the file content over gRPC.
+
+  So to summarize what you'd be building:
+
+  ┌────────────┬────────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │  Feature   │ Exists today?  │                                  Where it lives                                  │
+  ├────────────┼────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ file_map   │ Yes, in-memory │ Keep in-memory, add async persistence to PostgreSQL                              │
+  ├────────────┼────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ clients_db │ Yes, in-memory │ Keep in-memory, add async persistence to PostgreSQL                              │
+  ├────────────┼────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ file_locks │ No             │ New feature, PostgreSQL is primary, optionally cache in-memory for quick lookups │
+  └────────────┴────────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+  Three tables in one database, two different access patterns. The StateStore class hides all of this behind a clean interface so your server logic doesn't need to know the difference.
+
