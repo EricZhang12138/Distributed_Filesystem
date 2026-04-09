@@ -1,17 +1,24 @@
-#include "filesystem_server.hpp" 
+#include "filesystem_server.hpp"
 #include "subscriber_handler.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <chrono> // For timestamp logic
-#include <sys/stat.h> // For getting the stats 
+#include <sys/stat.h> // For getting the stats
+#include <sys/xattr.h>
+#include <sys/statvfs.h>
+#include <unistd.h>     // ::chown, ::truncate, ::fsync, ::open, ::close
+#include <fcntl.h>      // AT_FDCWD, O_WRONLY
+#include <cerrno>
+#include <cstring>
+#include <vector>
 
 
 
 
 int64_t get_file_timestamp(const std::string& path) {
     struct stat s;
-    if (stat(path.c_str(), &s) != 0) {
+    if (lstat(path.c_str(), &s) != 0) {
         return 0; // Or handle error appropriately
     }
     // Combine Seconds + Nanoseconds into a single int64 timestamp
@@ -25,6 +32,36 @@ int64_t get_file_timestamp(const std::string& path) {
     #endif
 
     return timestamp;
+}
+
+// Cross-platform xattr helpers — macOS uses 6-arg form, Linux 5-arg
+static int _set_xattr(const char* p, const char* n, const void* v, size_t s, int f) {
+#ifdef __APPLE__
+    return ::setxattr(p, n, v, s, 0, f | XATTR_NOFOLLOW);
+#else
+    return ::setxattr(p, n, v, s, f);
+#endif
+}
+static ssize_t _get_xattr(const char* p, const char* n, void* v, size_t s) {
+#ifdef __APPLE__
+    return ::getxattr(p, n, v, s, 0, XATTR_NOFOLLOW);
+#else
+    return ::getxattr(p, n, v, s);
+#endif
+}
+static ssize_t _list_xattr(const char* p, char* l, size_t s) {
+#ifdef __APPLE__
+    return ::listxattr(p, l, s, XATTR_NOFOLLOW);
+#else
+    return ::listxattr(p, l, s);
+#endif
+}
+static int _remove_xattr(const char* p, const char* n) {
+#ifdef __APPLE__
+    return ::removexattr(p, n, XATTR_NOFOLLOW);
+#else
+    return ::removexattr(p, n);
+#endif
 }
 
 // temperary debug
@@ -140,8 +177,9 @@ bool FileSystem::file_change_callback_rename(const std::string& old_path, const 
             file_map[new_path] = client_set;
             file_map.erase(it);
         } else {
-            // If old_path is not in the map, just register the new_path with the client
-            std::lock_guard<std::mutex> lock(file_map_mutex);
+            // If old_path is not in the map, just register the new_path with the client.
+            // We already hold file_map_mutex from the outer lock_guard above — taking it
+            // again here would self-deadlock on a non-recursive std::mutex.
             file_map[new_path].insert(client_id);
         }
     }
@@ -159,13 +197,13 @@ bool FileSystem::file_change_callback_unlink(const std::string& path, const std:
                 std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
                 for (const std::string& client: client_set){ // iterate through the client_set and update all of them
                     if (client == client_id) continue; // skip the client that initiated the unlink
-                    
+
                     // copy the shared_ptr in the queue and then this notif_ptr also owns the object now with this new shared_ptr
                     auto queue_it = subscribers.find(client);
                     if (queue_it != subscribers.end()) {
                         std::shared_ptr<NotificationQueue> notif_queue = queue_it->second;
                         // push to the producer worker queue
-                        notif_queue->push(notif); 
+                        notif_queue->push(notif);
                     }
                 }
             }
@@ -173,6 +211,23 @@ bool FileSystem::file_change_callback_unlink(const std::string& path, const std:
             file_map.erase(it);
         }
     }
+    return true;
+}
+
+bool FileSystem::file_change_callback_metadata(const std::string& path,
+                                               const std::string& client_id,
+                                               afs_operation::Notification& notif) {
+    std::lock_guard<std::mutex> lock_file_map(file_map_mutex);
+    auto it = file_map.find(path);
+    if (it == file_map.end()) return true;
+    auto client_set = it->second;
+    std::lock_guard<std::mutex> lock_subscribers(subscriber_mutex);
+    for (const auto& client : client_set) {
+        if (client == client_id) continue;
+        auto q = subscribers.find(client);
+        if (q != subscribers.end()) q->second->push(notif);
+    }
+    // intentionally do NOT erase file_map[path] - file still exists
     return true;
 }
 
@@ -246,7 +301,7 @@ grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operati
         // However, we can only see the files that can be listed with ls -a which doesn't contain ._file1.txt
         // so for every ._file1.txt, we see file not found error and this is totally normal
         struct stat s;
-        if (stat(path.c_str(), &s) != 0) {
+        if (lstat(path.c_str(), &s) != 0) {
             if (errno == ENOENT) {
                 // 1. ENOENT means "Entry Not Found". 
                 // This is NORMAL behavior when FUSE asks for a file that doesn't exist. 
@@ -267,10 +322,17 @@ grpc::Status FileSystem::getattr(grpc::ServerContext* context, const afs_operati
         response->set_uid(s.st_uid);       // user id and group id of the file's owner
         response->set_gid(s.st_gid);
 
-        int64_t precise_time = get_file_timestamp(path);
+        // Reuse the stat we already have - avoid a second lstat() syscall on this hot path
+        #ifdef __APPLE__
+            int64_t precise_time = (static_cast<int64_t>(s.st_mtimespec.tv_sec) * 1000000000LL)
+                                + s.st_mtimespec.tv_nsec;
+        #else
+            int64_t precise_time = (static_cast<int64_t>(s.st_mtim.tv_sec) * 1000000000LL)
+                                + s.st_mtim.tv_nsec;
+        #endif
         response->set_mtime(precise_time);
         response->set_atime(precise_time); // Or create a similar helper for atime if needed
-        response->set_ctime(precise_time);     
+        response->set_ctime(precise_time);
 
         // Log mode in octal, which is standard for permissions
         std::cout << "Attributes sent (mode): " << std::oct << s.st_mode << std::dec << std::endl;
@@ -623,7 +685,7 @@ grpc::Status FileSystem::unlink(grpc::ServerContext* context, const afs_operatio
                 std::cout << "Permission denied" << std::endl;;
                 return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "Permission denied");
             }else if (ec == std::errc::no_such_file_or_directory){
-                std::cout << "File not found: " << directory << std::endl; 
+                std::cout << "File not found: " << directory << std::endl;
                 return grpc::Status(grpc::StatusCode::NOT_FOUND, "Source file not found");
             }
         } else{
@@ -631,6 +693,418 @@ grpc::Status FileSystem::unlink(grpc::ServerContext* context, const afs_operatio
             return grpc::Status(grpc::StatusCode::NOT_FOUND, "Source file not found");
         }
     }
+    return grpc::Status::OK;
+}
+
+
+// === Group A: rmdir ===
+grpc::Status FileSystem::rmdir(grpc::ServerContext* context,
+                               const afs_operation::Rmdir_request* request,
+                               afs_operation::Rmdir_response* response) {
+    std::string directory = request->directory();
+    std::string client_id = request->client_id();
+
+    // Single ::rmdir() syscall - the kernel already distinguishes ENOTEMPTY/ENOTDIR/etc.
+    if (::rmdir(directory.c_str()) != 0) {
+        int e = errno;
+        std::cerr << "rmdir failed for " << directory << " errno=" << e << std::endl;
+        switch (e) {
+            case ENOENT:    return grpc::Status(grpc::StatusCode::NOT_FOUND, "Directory not found");
+            case ENOTDIR:   return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Path is not a directory");
+            case ENOTEMPTY:
+            case EEXIST:    return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "Directory is not empty");
+            case EACCES:
+            case EPERM:     return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, std::strerror(e));
+            default:        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+        }
+    }
+
+    afs_operation::Notification notif;
+    notif.set_directory(directory);
+    notif.set_message("DELETE");
+    file_change_callback_unlink(directory, client_id, notif);
+
+    response->set_success(true);
+    std::cout << "Server rmdir successful: " << directory << std::endl;
+    return grpc::Status::OK;
+}
+
+// === Group B: chmod ===
+grpc::Status FileSystem::chmod(grpc::ServerContext* context,
+                               const afs_operation::Chmod_request* request,
+                               afs_operation::Chmod_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+    std::string client_id = request->client_id();
+    uint32_t mode = request->mode();
+
+    if (::chmod(path.c_str(), static_cast<mode_t>(mode)) != 0) {
+        int e = errno;
+        std::cerr << "chmod failed for " << path << " errno=" << e << std::endl;
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        if (e == EACCES || e == EPERM) return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, std::strerror(e));
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    int64_t ts = get_file_timestamp(path);
+    response->set_success(true);
+    response->set_timestamp(ts);
+
+    afs_operation::Notification notif;
+    notif.set_directory(path);
+    notif.set_message("UPDATE");
+    notif.set_timestamp(ts);
+    file_change_callback_metadata(path, client_id, notif);
+
+    std::cout << "Server chmod successful: " << path << " mode=" << std::oct << mode << std::dec << std::endl;
+    return grpc::Status::OK;
+}
+
+// === Group C: chown ===
+grpc::Status FileSystem::chown(grpc::ServerContext* context,
+                               const afs_operation::Chown_request* request,
+                               afs_operation::Chown_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+    std::string client_id = request->client_id();
+
+    if (::lchown(path.c_str(), static_cast<uid_t>(request->uid()), static_cast<gid_t>(request->gid())) != 0) {
+        int e = errno;
+        std::cerr << "chown failed for " << path << " errno=" << e << std::endl;
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        if (e == EPERM || e == EACCES) return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, std::strerror(e));
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    int64_t ts = get_file_timestamp(path);
+    response->set_success(true);
+    response->set_timestamp(ts);
+
+    afs_operation::Notification notif;
+    notif.set_directory(path);
+    notif.set_message("UPDATE");
+    notif.set_timestamp(ts);
+    file_change_callback_metadata(path, client_id, notif);
+
+    std::cout << "Server chown successful: " << path << std::endl;
+    return grpc::Status::OK;
+}
+
+// === Group D: utimens ===
+grpc::Status FileSystem::utimens(grpc::ServerContext* context,
+                                 const afs_operation::Utimens_request* request,
+                                 afs_operation::Utimens_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+    std::string client_id = request->client_id();
+
+    int64_t atime_ns = request->atime();
+    int64_t mtime_ns = request->mtime();
+    struct timespec times[2];
+    times[0].tv_sec = static_cast<time_t>(atime_ns / 1000000000LL);
+    times[0].tv_nsec = static_cast<long>(atime_ns % 1000000000LL);
+    times[1].tv_sec = static_cast<time_t>(mtime_ns / 1000000000LL);
+    times[1].tv_nsec = static_cast<long>(mtime_ns % 1000000000LL);
+
+    if (::utimensat(AT_FDCWD, path.c_str(), times, AT_SYMLINK_NOFOLLOW) != 0) {
+        int e = errno;
+        std::cerr << "utimens failed for " << path << " errno=" << e << std::endl;
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        if (e == EPERM || e == EACCES) return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, std::strerror(e));
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    response->set_success(true);
+
+    afs_operation::Notification notif;
+    notif.set_directory(path);
+    notif.set_message("UPDATE");
+    notif.set_timestamp(get_file_timestamp(path));
+    file_change_callback_metadata(path, client_id, notif);
+
+    std::cout << "Server utimens successful: " << path << std::endl;
+    return grpc::Status::OK;
+}
+
+// === Group E: symlink / readlink ===
+grpc::Status FileSystem::symlink(grpc::ServerContext* context,
+                                 const afs_operation::Symlink_request* request,
+                                 afs_operation::Symlink_response* response) {
+    std::string target = request->target();
+    std::string linkpath_dir = request->linkpath_dir();
+    std::string linkpath_name = request->linkpath_name();
+    std::string linkpath = linkpath_dir + (linkpath_dir.back() == '/' ? "" : "/") + linkpath_name;
+
+    std::error_code ec;
+    std::filesystem::create_symlink(target, linkpath, ec);
+    if (ec) {
+        std::cerr << "symlink failed: " << ec.message() << std::endl;
+        if (ec == std::errc::file_exists) {
+            return grpc::Status(grpc::StatusCode::ALREADY_EXISTS, ec.message());
+        }
+        if (ec == std::errc::permission_denied) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ec.message());
+        }
+        return grpc::Status(grpc::StatusCode::INTERNAL, ec.message());
+    }
+
+    response->set_success(true);
+    std::cout << "Server symlink created: " << linkpath << " -> " << target << std::endl;
+    return grpc::Status::OK;
+}
+
+grpc::Status FileSystem::readlink(grpc::ServerContext* context,
+                                  const afs_operation::Readlink_request* request,
+                                  afs_operation::Readlink_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+
+    std::error_code ec;
+    std::filesystem::path target = std::filesystem::read_symlink(path, ec);
+    if (ec) {
+        std::cerr << "readlink failed for " << path << ": " << ec.message() << std::endl;
+        if (ec == std::errc::no_such_file_or_directory) {
+            return grpc::Status(grpc::StatusCode::NOT_FOUND, ec.message());
+        }
+        if (ec == std::errc::invalid_argument) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, ec.message());
+        }
+        return grpc::Status(grpc::StatusCode::INTERNAL, ec.message());
+    }
+
+    response->set_target(target.string());
+    response->set_success(true);
+    std::cout << "Server readlink: " << path << " -> " << target.string() << std::endl;
+    return grpc::Status::OK;
+}
+
+// === Group F: server-side truncate ===
+grpc::Status FileSystem::truncate(grpc::ServerContext* context,
+                                  const afs_operation::Truncate_request* request,
+                                  afs_operation::Truncate_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+    std::string client_id = request->client_id();
+
+    if (::truncate(path.c_str(), static_cast<off_t>(request->size())) != 0) {
+        int e = errno;
+        std::cerr << "truncate failed for " << path << " errno=" << e << std::endl;
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        if (e == EACCES || e == EPERM) return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, std::strerror(e));
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    int64_t ts = get_file_timestamp(path);
+    response->set_success(true);
+    response->set_timestamp(ts);
+
+    afs_operation::Notification notif;
+    notif.set_directory(path);
+    notif.set_message("UPDATE");
+    notif.set_timestamp(ts);
+    file_change_callback_metadata(path, client_id, notif);
+
+    std::cout << "Server truncate successful: " << path << " size=" << request->size() << std::endl;
+    return grpc::Status::OK;
+}
+
+// === Group G: fsync (streamed write + fsync) ===
+grpc::Status FileSystem::flush_file(grpc::ServerContext* context,
+                                    grpc::ServerReader<afs_operation::FileRequest>* reader,
+                                    afs_operation::Fsync_response* response) {
+    afs_operation::FileRequest request;
+    std::string filename;
+    std::string path;
+    std::string client_id;
+    int fd = -1;
+
+    while (reader->Read(&request)) {
+        if (fd < 0) {
+            filename = request.filename();
+            path = request.directory() + (request.directory().back() == '/' ? "" : "/") + filename;
+            std::filesystem::path file_path(path);
+            std::filesystem::create_directories(file_path.parent_path());
+            fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd < 0) {
+                std::cerr << "flush_file: failed to open " << path << " errno=" << errno << std::endl;
+                return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "cannot open file to write");
+            }
+        }
+        const std::string& content = request.content();
+        if (!content.empty()) {
+            ::write(fd, content.data(), content.size());
+        }
+        client_id = request.client_id();
+    }
+
+    if (fd < 0) {
+        std::cerr << "flush_file: no file data received" << std::endl;
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "No file data received.");
+    }
+
+    // Force durability to disk on the same fd, then close.
+    ::fsync(fd);
+    ::close(fd);
+
+    int64_t ts = get_file_timestamp(path);
+    response->set_success(true);
+    response->set_timestamp(ts);
+
+    afs_operation::Notification notif;
+    notif.set_directory(path);
+    notif.set_message("UPDATE");
+    notif.set_timestamp(ts);
+    file_change_callback_metadata(path, client_id, notif);
+
+    std::cout << "Server flush_file successful: " << path << std::endl;
+    return grpc::Status::OK;
+}
+
+// === Group H: statfs ===
+grpc::Status FileSystem::statfs(grpc::ServerContext* context,
+                                const afs_operation::Statfs_request* request,
+                                afs_operation::Statfs_response* response) {
+    struct statvfs buf;
+    if (::statvfs(root_dir.c_str(), &buf) != 0) {
+        int e = errno;
+        std::cerr << "statvfs failed errno=" << e << std::endl;
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+    response->set_bsize(buf.f_bsize);
+    response->set_frsize(buf.f_frsize);
+    response->set_blocks(buf.f_blocks);
+    response->set_bfree(buf.f_bfree);
+    response->set_bavail(buf.f_bavail);
+    response->set_files(buf.f_files);
+    response->set_ffree(buf.f_ffree);
+    return grpc::Status::OK;
+}
+
+// === Group I: xattr ===
+grpc::Status FileSystem::setxattr(grpc::ServerContext* context,
+                                  const afs_operation::SetXattr_request* request,
+                                  afs_operation::SetXattr_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+    const std::string& value = request->value();
+
+    if (_set_xattr(path.c_str(), request->name().c_str(), value.data(), value.size(), request->flags()) != 0) {
+        int e = errno;
+        std::cerr << "setxattr failed for " << path << " errno=" << e << std::endl;
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        if (e == EACCES || e == EPERM) return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, std::strerror(e));
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    response->set_success(true);
+    return grpc::Status::OK;
+}
+
+grpc::Status FileSystem::getxattr(grpc::ServerContext* context,
+                                  const afs_operation::GetXattr_request* request,
+                                  afs_operation::GetXattr_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+
+    // Standard pattern: query size first, then read
+    ssize_t needed = _get_xattr(path.c_str(), request->name().c_str(), nullptr, 0);
+    if (needed < 0) {
+        int e = errno;
+#ifdef __APPLE__
+        if (e == ENOATTR) {
+#else
+        if (e == ENODATA) {
+#endif
+            response->set_found(false);
+            return grpc::Status::OK;
+        }
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    std::vector<char> buf(needed);
+    ssize_t got = _get_xattr(path.c_str(), request->name().c_str(), buf.data(), buf.size());
+    if (got < 0) {
+        int e = errno;
+#ifdef __APPLE__
+        if (e == ENOATTR) {
+#else
+        if (e == ENODATA) {
+#endif
+            response->set_found(false);
+            return grpc::Status::OK;
+        }
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    response->set_value(std::string(buf.data(), got));
+    response->set_found(true);
+    return grpc::Status::OK;
+}
+
+grpc::Status FileSystem::listxattr(grpc::ServerContext* context,
+                                   const afs_operation::ListXattr_request* request,
+                                   afs_operation::ListXattr_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+
+    ssize_t needed = _list_xattr(path.c_str(), nullptr, 0);
+    if (needed < 0) {
+        int e = errno;
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+    if (needed == 0) {
+        return grpc::Status::OK;
+    }
+
+    std::vector<char> buf(needed);
+    ssize_t got = _list_xattr(path.c_str(), buf.data(), buf.size());
+    if (got < 0) {
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(errno));
+    }
+
+    // Parse null-separated buffer
+    ssize_t i = 0;
+    while (i < got) {
+        const char* name_start = buf.data() + i;
+        size_t name_len = ::strnlen(name_start, got - i);
+        if (name_len == 0) break;
+        response->add_names(std::string(name_start, name_len));
+        i += name_len + 1;
+    }
+    return grpc::Status::OK;
+}
+
+grpc::Status FileSystem::removexattr(grpc::ServerContext* context,
+                                     const afs_operation::RemoveXattr_request* request,
+                                     afs_operation::RemoveXattr_response* response) {
+    std::string directory = request->directory();
+    std::string filename = request->filename();
+    std::string path = directory + (directory.back() == '/' ? "" : "/") + filename;
+
+    if (_remove_xattr(path.c_str(), request->name().c_str()) != 0) {
+        int e = errno;
+        std::cerr << "removexattr failed for " << path << " errno=" << e << std::endl;
+        if (e == ENOENT) return grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found");
+#ifdef __APPLE__
+        if (e == ENOATTR) return grpc::Status(grpc::StatusCode::NOT_FOUND, "Attribute not found");
+#else
+        if (e == ENODATA) return grpc::Status(grpc::StatusCode::NOT_FOUND, "Attribute not found");
+#endif
+        if (e == EACCES || e == EPERM) return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, std::strerror(e));
+        return grpc::Status(grpc::StatusCode::INTERNAL, std::strerror(e));
+    }
+
+    response->set_success(true);
     return grpc::Status::OK;
 }
 

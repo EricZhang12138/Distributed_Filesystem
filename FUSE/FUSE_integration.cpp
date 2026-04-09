@@ -1,10 +1,12 @@
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
-// /usr/local/lib/*fuse*.dylib, where the libraries are installed 
+// /usr/local/lib/*fuse*.dylib, where the libraries are installed
 #include <string.h>
 #include <errno.h>
 #include <iostream>
 #include <memory>
+#include <vector>
+#include <sys/statvfs.h>
 #include "filesystem_client.hpp"
 
 static FileSystemClient* get_client(){
@@ -242,150 +244,288 @@ static int afs_unlink(const char *path){
     return 0;
 }
 
-static int afs_unlink_folder(const char *path){
+static int afs_rmdir(const char *path) {
     std::string full_path(path);
-    if (!get_client() -> delete_file(full_path)){
-        std::cout << "FUSE: folder deletion failed: " << full_path << std::endl;
-        return -ENOENT;
+    int rc = get_client()->delete_directory(full_path);
+    if (rc < 0) {
+        std::cout << "FUSE: rmdir failed: " << full_path << " errno=" << -rc << std::endl;
+        return rc;   // already negative errno
     }
     return 0;
 }
 
 
 
-// dummy function, not implemented
 // CHMOD (Change Mode/Permissions)
-// The OS calls this to ensure the temp file has the same rights as the original.
 static int afs_chmod(const char *path, mode_t mode) {
-    // In a real filesystem, you would update the 'mode' in your cached_attr map.
-    // For now, returning 0 is enough to let the editor proceed.
-    std::cout << "FUSE: chmod called for " << path << " (Mock Success)" << std::endl;
-    return 0; 
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    if (!get_client()->change_mode(filename, dir, static_cast<uint32_t>(mode))) {
+        std::cout << "FUSE: chmod failed for " << path << std::endl;
+        return -EACCES;
+    }
+    std::cout << "FUSE: chmod succeeded for " << path << std::endl;
+    return 0;
 }
 
 
-// dummy function, not implemented 
 // UTIMENS (Update Timestamps)
-// The OS calls this to set specific access/modification times.
 static int afs_utimens(const char *path, const struct timespec tv[2]) {
-    // tv[0] is atime, tv[1] is mtime
-    // Again, returning 0 tricks the editor into thinking it succeeded.
-    std::cout << "FUSE: utimens called for " << path << " (Mock Success)" << std::endl;
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    int64_t atime_ns = static_cast<int64_t>(tv[0].tv_sec) * 1000000000LL + tv[0].tv_nsec;
+    int64_t mtime_ns = static_cast<int64_t>(tv[1].tv_sec) * 1000000000LL + tv[1].tv_nsec;
+
+    if (!get_client()->set_times(filename, dir, atime_ns, mtime_ns)) {
+        std::cout << "FUSE: utimens failed for " << path << std::endl;
+        return -EACCES;
+    }
+    std::cout << "FUSE: utimens succeeded for " << path << std::endl;
     return 0;
 }
 
 #ifdef __APPLE__
 static int afs_setxattr(const char *path, const char *name, const char *value, size_t size, int flags, uint32_t position){
+    (void) position;
 #else
 static int afs_setxattr(const char *path, const char *name, const char *value, size_t size, int flags) {
 #endif
-    // macOS tries to set 'com.apple.quarantine' etc.
-    // We just say "Okay!" without actually saving it.
-    // Ideally, you'd save this to a map, but for basic saving, ignoring is fine.
-    
-    // On macOS, the function signature might differ slightly depending on FUSE version.
-    // If you get a compile error, check if your version adds a 'uint32_t position' arg.
-    std::cout << "FUSE: setxattr " << name << " (Ignored)" << std::endl;
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    std::string val(value, size);
+    if (!get_client()->set_xattr(filename, dir, std::string(name), val, flags)) {
+        std::cout << "FUSE: setxattr failed for " << path << " name=" << name << std::endl;
+        return -EACCES;
+    }
+    std::cout << "FUSE: setxattr succeeded for " << path << " name=" << name << std::endl;
     return 0;
 }
 
-// Fake getting attributes (Attribute Not Found)
+// Get xattr with size-query semantics
 #ifdef __APPLE__
 static int afs_getxattr(const char *path, const char *name, char *value, size_t size, uint32_t position) {
+    (void) position;
 #else
 static int afs_getxattr(const char *path, const char *name, char *value, size_t size) {
 #endif
-    // If we say "Success" but return empty, macOS gets confused.
-    // It's safer to say "I don't have that attribute" (-ENOATTR is standard on macOS).
-    // Note: On Linux this is -ENODATA.
-    
-    #ifdef __APPLE__
-        return -ENOATTR; 
-    #else
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    std::string out;
+    int rc = get_client()->get_xattr(filename, dir, std::string(name), out);
+    if (rc < 0) {
+#ifdef __APPLE__
+        return -ENOATTR;
+#else
         return -ENODATA;
-    #endif
+#endif
+    }
+
+    if (size == 0) {
+        return rc;   // size query
+    }
+    if (static_cast<size_t>(rc) > size) {
+        return -ERANGE;
+    }
+    std::memcpy(value, out.data(), rc);
+    return rc;
 }
 
 
 
-// Fake Disk Space Reporting
+// Real disk space reporting via server statvfs
 static int afs_statfs(const char *path, struct statvfs *stbuf) {
-    // 1. Block Size (Standard is 4KB)
-    stbuf->f_bsize = 4096;
-    stbuf->f_frsize = 4096;
-
-    // 2. Total Blocks (Fake a large size, e.g., ~10GB)
-    // 2621440 blocks * 4096 bytes = ~10 GB
-    stbuf->f_blocks = 2621440;
-
-    // 3. Free Blocks (Pretend it's all free)
-    // This is what the editor checks. If this is 0, save fails.
-    stbuf->f_bfree = 2621440;
-    stbuf->f_bavail = 2621440; 
-
-    // 4. Inodes (File count limits)
-    // Some tools check this too. Give plenty.
-    stbuf->f_files = 10000;
-    stbuf->f_ffree = 10000;
-
+    (void) path;
+    if (!get_client()->get_filesystem_stats(*stbuf)) {
+        return -EIO;
+    }
     return 0;
 }
 
-// TextEdit calls this on the temp file during atomic save.
-// We mock success to keep it happy.
+// CHOWN
 static int afs_chown(const char *path, uid_t uid, gid_t gid) {
-    (void) uid; (void) gid; // Mark as unused to silence compiler warnings
-    std::cout << "FUSE: chown called for " << path << " (Mock Success)" << std::endl;
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    if (!get_client()->change_owner(filename, dir, static_cast<uint32_t>(uid), static_cast<uint32_t>(gid))) {
+        std::cout << "FUSE: chown failed for " << path << std::endl;
+        return -EPERM;
+    }
+    std::cout << "FUSE: chown succeeded for " << path << std::endl;
     return 0;
 }
 
 static int afs_fsync(const char *path, int isdatasync, struct fuse_file_info *fi) {
-    (void) path; (void) isdatasync; (void) fi;
-    // Since we write synchronously in afs_write (or cache in memory until close),
-    // we can just say "Yes, it's synced".
-    return 0;
-}
-static int afs_listxattr(const char *path, char *list, size_t size) {
-    // If 'size' is 0, the OS is asking "How large is the list?". 
-    // We return 0 because we have no attributes.
-    // If 'size' > 0, the OS wants the data. We copy nothing and return 0.
+    (void) isdatasync; (void) fi;
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    if (!get_client()->fsync_file(filename, dir)) {
+        std::cout << "FUSE: fsync failed for " << path << std::endl;
+        return -EIO;
+    }
     return 0;
 }
 
+static int afs_listxattr(const char *path, char *list, size_t size) {
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    std::vector<std::string> names;
+    if (!get_client()->list_xattr(filename, dir, names)) {
+        return -EIO;
+    }
+
+    // Compute total size: name + null terminator for each
+    size_t total = 0;
+    for (const auto& n : names) total += n.size() + 1;
+
+    if (size == 0) {
+        return static_cast<int>(total);
+    }
+    if (total > size) {
+        return -ERANGE;
+    }
+
+    char* dst = list;
+    for (const auto& n : names) {
+        std::memcpy(dst, n.data(), n.size());
+        dst[n.size()] = '\0';
+        dst += n.size() + 1;
+    }
+    return static_cast<int>(total);
+}
+
+// REMOVEXATTR
+static int afs_removexattr(const char *path, const char *name) {
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    if (!get_client()->remove_xattr(filename, dir, std::string(name))) {
+        std::cout << "FUSE: removexattr failed for " << path << " name=" << name << std::endl;
+#ifdef __APPLE__
+        return -ENOATTR;
+#else
+        return -ENODATA;
+#endif
+    }
+    return 0;
+}
+
+// SYMLINK
+// FUSE convention: symlink(target, linkpath) - create linkpath that points to target
+static int afs_symlink(const char *target, const char *linkpath) {
+    std::filesystem::path fs_path(linkpath);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    if (!get_client()->create_symlink(std::string(target), dir, filename)) {
+        std::cout << "FUSE: symlink failed for " << linkpath << " -> " << target << std::endl;
+        return -EACCES;
+    }
+    return 0;
+}
+
+// READLINK
+static int afs_readlink(const char *path, char *buf, size_t size) {
+    if (size == 0) return 0;
+
+    std::filesystem::path fs_path(path);
+    std::string dir = fs_path.parent_path().string();
+    std::string filename = fs_path.filename().string();
+    if (dir.empty() || dir == "/") dir = "";
+
+    std::string target;
+    if (!get_client()->read_symlink(filename, dir, target)) {
+        return -ENOENT;
+    }
+
+    // POSIX semantics: copy up to size-1 bytes, null terminate, return 0
+    size_t copy_len = std::min(target.size(), size - 1);
+    std::memcpy(buf, target.data(), copy_len);
+    buf[copy_len] = '\0';
+    return 0;
+}
+
+
+// Carries the server address from main() into afs_init() so we can construct
+// the FileSystemClient *after* fuse_main() has daemonized (forked). gRPC is
+// not fork-safe: any threads/channels created before the fork are orphaned in
+// the parent and the child's first RPC hangs forever.
+struct AfsBootstrap {
+    std::string address;
+};
+
+static void* afs_init(struct fuse_conn_info *conn) {
+    (void) conn;
+    auto* boot = static_cast<AfsBootstrap*>(fuse_get_context()->private_data);
+    auto channel = grpc::CreateChannel(boot->address, grpc::InsecureChannelCredentials());
+    FileSystemClient* client = new FileSystemClient(channel);
+    // FUSE replaces private_data with whatever we return here, so all subsequent
+    // fuse_get_context()->private_data lookups (used by get_client()) will see
+    // the FileSystemClient*.
+    return client;
+}
+
+static void afs_destroy(void* private_data) {
+    delete static_cast<FileSystemClient*>(private_data);
+}
 
 static fuse_operations afs_oper = {
-    .getattr    = afs_getattr,
-    .mkdir      = afs_mkdir,
-    .unlink     = afs_unlink,
-    .rmdir      = afs_unlink_folder, // Maps to 'rmdir' in the struct
-    .rename     = afs_rename,
-    .chmod      = afs_chmod,
-    .chown      = afs_chown,
-    .truncate   = afs_truncate,
-    .open       = afs_open,
-    .read       = afs_read,
-    .write      = afs_write,
-    .statfs     = afs_statfs,
-    .release    = afs_release,
-    .fsync      = afs_fsync,
-    .setxattr   = afs_setxattr,
-    .getxattr   = afs_getxattr,
-    .listxattr  = afs_listxattr,
-    .readdir    = afs_readdir,
-    .create     = afs_create,
-    .utimens    = afs_utimens,
+    .getattr     = afs_getattr,
+    .readlink    = afs_readlink,
+    .mkdir       = afs_mkdir,
+    .unlink      = afs_unlink,
+    .rmdir       = afs_rmdir,
+    .symlink     = afs_symlink,
+    .rename      = afs_rename,
+    .chmod       = afs_chmod,
+    .chown       = afs_chown,
+    .truncate    = afs_truncate,
+    .open        = afs_open,
+    .read        = afs_read,
+    .write       = afs_write,
+    .statfs      = afs_statfs,
+    .release     = afs_release,
+    .fsync       = afs_fsync,
+    .setxattr    = afs_setxattr,
+    .getxattr    = afs_getxattr,
+    .listxattr   = afs_listxattr,
+    .removexattr = afs_removexattr,
+    .readdir     = afs_readdir,
+    .init        = afs_init,
+    .destroy     = afs_destroy,
+    .create      = afs_create,
+    .utimens     = afs_utimens,
 };
 
 
 int main(int argc, char *argv[]){
     const char* env_addr = std::getenv("SERVER_ADDRESS");
-    std::string address = env_addr ? std::string(env_addr) : "localhost:50051";
-    //std::string address = "192.168.0.31:50051";
-    auto channel = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
-
-    FileSystemClient* client = new FileSystemClient(channel);
-
-    return fuse_main(argc, argv, &afs_oper, client);
+    AfsBootstrap boot{ env_addr ? std::string(env_addr) : "localhost:50051" };
+    // Pass the bootstrap pointer through fuse_main; afs_init will read it and
+    // return the real FileSystemClient* as the long-lived private_data.
+    return fuse_main(argc, argv, &afs_oper, &boot);
 }
 
 

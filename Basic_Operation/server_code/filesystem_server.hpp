@@ -79,6 +79,10 @@ private:
 
     bool file_change_callback_unlink(const std::string& path, const std::string& client_id, afs_operation::Notification& notif);
 
+    bool file_change_callback_metadata(const std::string& path,
+                                       const std::string& client_id,
+                                       afs_operation::Notification& notif);
+
     void cleanup_client(const std::string& client_id);
 
     grpc::Status request_dir(grpc::ServerContext* context, const afs_operation::InitialiseRequest* request, afs_operation::InitialiseResponse* response) override;
@@ -98,6 +102,20 @@ private:
     grpc::Status mkdir(grpc::ServerContext* context, const afs_operation::MakeDir_request* request, afs_operation::MakeDir_response* response) override;
 
     grpc::Status unlink(grpc::ServerContext* context, const afs_operation::Delete_request* request, afs_operation::Delete_response* response) override;
+
+    grpc::Status rmdir       (grpc::ServerContext*, const afs_operation::Rmdir_request*,        afs_operation::Rmdir_response*) override;
+    grpc::Status chmod       (grpc::ServerContext*, const afs_operation::Chmod_request*,        afs_operation::Chmod_response*) override;
+    grpc::Status chown       (grpc::ServerContext*, const afs_operation::Chown_request*,        afs_operation::Chown_response*) override;
+    grpc::Status utimens     (grpc::ServerContext*, const afs_operation::Utimens_request*,      afs_operation::Utimens_response*) override;
+    grpc::Status symlink     (grpc::ServerContext*, const afs_operation::Symlink_request*,      afs_operation::Symlink_response*) override;
+    grpc::Status readlink    (grpc::ServerContext*, const afs_operation::Readlink_request*,     afs_operation::Readlink_response*) override;
+    grpc::Status truncate    (grpc::ServerContext*, const afs_operation::Truncate_request*,     afs_operation::Truncate_response*) override;
+    grpc::Status flush_file  (grpc::ServerContext*, grpc::ServerReader<afs_operation::FileRequest>*, afs_operation::Fsync_response*) override;
+    grpc::Status statfs      (grpc::ServerContext*, const afs_operation::Statfs_request*,       afs_operation::Statfs_response*) override;
+    grpc::Status setxattr    (grpc::ServerContext*, const afs_operation::SetXattr_request*,     afs_operation::SetXattr_response*) override;
+    grpc::Status getxattr    (grpc::ServerContext*, const afs_operation::GetXattr_request*,     afs_operation::GetXattr_response*) override;
+    grpc::Status listxattr   (grpc::ServerContext*, const afs_operation::ListXattr_request*,    afs_operation::ListXattr_response*) override;
+    grpc::Status removexattr (grpc::ServerContext*, const afs_operation::RemoveXattr_request*,  afs_operation::RemoveXattr_response*) override;
 
     grpc::Status subscribe(grpc::ServerContext* context, const afs_operation::SubscribeRequest* request, grpc::ServerWriter<afs_operation::Notification>* writer) override;
 

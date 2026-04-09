@@ -1,12 +1,15 @@
 #include "filesystem_client.hpp"
 #include "client_subscriber.hpp"
 #include <iostream>
-#include <sstream> 
+#include <sstream>
 #include <chrono>
 #include <thread>
 #include <filesystem>
-#include <vector> 
+#include <vector>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <cstring>
+#include <cerrno>
 #include <thread>
 
 
@@ -211,8 +214,8 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             return false;
         }
 
-        auto read_stream = std::make_unique<std::ifstream>(file_location, std::ios::binary);
-        auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
+        auto read_stream = std::make_shared<std::ifstream>(file_location, std::ios::binary);
+        auto write_stream = std::make_shared<std::ofstream>(file_location, std::ios::binary | std::ios::in);
 
         if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
             std::cerr << "Failed to open local file streams after download." << std::endl;
@@ -242,8 +245,8 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
         // No need to compare with server since subscriber invalidates cache when needed
         std::cout << "File: " << file_location << " found in cache, opening..." << std::endl;
 
-        auto read_stream = std::make_unique<std::ifstream>(file_location, std::ios::binary);
-        auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
+        auto read_stream = std::make_shared<std::ifstream>(file_location, std::ios::binary);
+        auto write_stream = std::make_shared<std::ofstream>(file_location, std::ios::binary | std::ios::in);
 
         if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
             std::cerr << "Failed to open the local file stream for: " << file_location << std::endl;
@@ -383,53 +386,53 @@ bool FileSystemClient::read_file(const std::string& filename, const std::string&
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
 
-    cache_mutex.lock();
-    if (cache.find(file_location)==cache.end()){
-        cache_mutex.unlock();
-        std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
-        return false;
-    } else {
-        if (opened_files.find(file_location) == opened_files.end()){
-            std::cerr << "File found in cache but it is not opened. Open the file by calling open_file()" << std::endl;
-            cache_mutex.unlock();
+    // Capture both the per-file mutex and the stream as shared_ptrs under cache_mutex,
+    // so we can drop cache_mutex without leaving dangling iterators or raw pointers.
+    std::shared_ptr<std::mutex> file_mtx;
+    std::shared_ptr<std::ifstream> read_stream;
+    {
+        std::lock_guard<std::mutex> g(cache_mutex);
+        if (cache.find(file_location) == cache.end()) {
+            std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
             return false;
-        } else {
-            auto it = opened_files.find(file_location);
-            // Lock per-file mutex for stream access
-            auto m_it = file_mutexes.find(file_location);
-            if (m_it == file_mutexes.end()) {
-                cache_mutex.unlock();
-                std::cerr << "No mutex for file: " << file_location << " when reading"<<std::endl;
-                return false;
-            }
-            std::shared_ptr<std::mutex> file_mtx = m_it->second;
-            cache_mutex.unlock();
-            std::lock_guard<std::mutex> file_lock(*file_mtx);
-            std::ifstream& file_stream = *(it->second.read_stream);
-            // read the file from the cache
-            file_stream.seekg(offset, std::ios::beg);
-            if (!file_stream) {
-                // This check catches errors like seeking past the end of the file
-                std::cerr << "Error: Could not seek to offset " << offset << "." << std::endl;
-                return false;
-            }
-            buffer.resize(size);
-                                
-            file_stream.read(buffer.data(), size);
-            
-            size_t bytes_read = file_stream.gcount();
-
-            std::cout << "Requested " << size << " bytes, actually read " << bytes_read << "." << std::endl;
-
-            if (bytes_read < size) {
-                std::cout << "Warning: Reached end of file early." << std::endl;
-                // The buffer will contain 'bytes_read' valid characters.
-                // resize it to remove the unused space.
-                buffer.resize(bytes_read);
-            }
-            return true;
         }
+        auto it = opened_files.find(file_location);
+        if (it == opened_files.end()) {
+            std::cerr << "File found in cache but it is not opened. Open the file by calling open_file()" << std::endl;
+            return false;
+        }
+        auto m_it = file_mutexes.find(file_location);
+        if (m_it == file_mutexes.end()) {
+            std::cerr << "No mutex for file: " << file_location << " when reading" << std::endl;
+            return false;
+        }
+        file_mtx = m_it->second;
+        read_stream = it->second.read_stream;
     }
+    std::lock_guard<std::mutex> file_lock(*file_mtx);
+    std::ifstream& file_stream = *read_stream;
+    // read the file from the cache
+    file_stream.seekg(offset, std::ios::beg);
+    if (!file_stream) {
+        // This check catches errors like seeking past the end of the file
+        std::cerr << "Error: Could not seek to offset " << offset << "." << std::endl;
+        return false;
+    }
+    buffer.resize(size);
+
+    file_stream.read(buffer.data(), size);
+
+    size_t bytes_read = file_stream.gcount();
+
+    std::cout << "Requested " << size << " bytes, actually read " << bytes_read << "." << std::endl;
+
+    if (bytes_read < size) {
+        std::cout << "Warning: Reached end of file early." << std::endl;
+        // The buffer will contain 'bytes_read' valid characters.
+        // resize it to remove the unused space.
+        buffer.resize(bytes_read);
+    }
+    return true;
 }
 
 
@@ -438,85 +441,86 @@ bool FileSystemClient::write_file(const std::string& filename, const std::string
     std::string resolved_path = resolve_server_path(directory);
     std::string file_location = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path + (resolved_path.back()=='/' ? "" : "/") + filename; 
 
-    cache_mutex.lock();
-    if (cache.find(file_location) == cache.end()){
-        cache_mutex.unlock();
-        std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
-        return false;
-    } else {
-        
-        if (opened_files.find(file_location) == opened_files.end()){
-            std::cerr << "File found in cache but it is not opened. Open the file by calling open_file()" << std::endl;
-            cache_mutex.unlock();
+    // Capture the per-file mutex and the stream as shared_ptrs under cache_mutex,
+    // so we can drop cache_mutex without leaving dangling iterators or raw pointers.
+    std::shared_ptr<std::mutex> file_mtx;
+    std::shared_ptr<std::ofstream> write_stream;
+    {
+        std::lock_guard<std::mutex> g(cache_mutex);
+        if (cache.find(file_location) == cache.end()) {
+            std::cerr << "File not in cache. Get the file from the server by calling open_file()" << std::endl;
             return false;
-        } else {
-            auto it = opened_files.find(file_location);
-            // Lock per-file mutex for stream access
-            auto m_it = file_mutexes.find(file_location);
-            if (m_it == file_mutexes.end()) {
-                cache_mutex.unlock();
-                std::cerr << "No mutex for file: " << file_location << " when writing"<< std::endl;
-                return false;
-            }
-            std::shared_ptr<std::mutex> file_mtx = m_it->second;
-            cache_mutex.unlock();
-            std::lock_guard<std::mutex> file_lock(*file_mtx);
-            std::ofstream& file_stream = *(it->second.write_stream);
-            file_stream.seekp(position);
-            if (file_stream.fail()){
-                std::cerr << "Error: Failed to seek to position " << position << " in " << filename << std::endl; 
-                file_stream.clear(); // clear the fail bit
-                return false;
-            }
-
-            file_stream.write(data.data(), data.size());
-            file_stream.flush();
-
-            if (file_stream.fail()) {
-                std::cerr << "Error: Failed to write data to " << filename << std::endl;
-                return false;
-            }
-            
-            // 1. Mark the file content as changed for eventual upload
-            cache_mutex.lock();
-            cache[file_location].locally_modified = true;
-            cache_mutex.unlock();
-
-            // Update the cached_attr to reflect changes immediately
-
-            // Reconstruct the key exactly how get_attributes does it
-            std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
-            cache_mutex.lock();
-            auto attr_it = cached_attr.find(file_loca_server);
-            if (attr_it != cached_attr.end()) {
-                try {
-                    // Update Size: Get the actual size of the local file on disk
-                    // This handles both overwrites (size same) and appends (size grows) automatically
-                    uintmax_t new_size = std::filesystem::file_size(file_location);
-                    attr_it->second.size = static_cast<int64_t>(new_size);
-
-                    // Get current time in nanoseconds
-                    auto now = std::chrono::system_clock::now();
-                    auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-
-                    attr_it->second.mtime = static_cast<int64_t>(now_ns);
-                    
-                    // We do not change uid/gid here, preserving the "local machine" spoofing 
-                    // I set in get_attributes.
-
-                    std::cout << "Updated cached attributes for " << filename << ": Size=" << new_size << std::endl;
-
-                } catch (const std::filesystem::filesystem_error& e) {
-                    std::cerr << "Warning: Failed to update cached attributes size: " << e.what() << std::endl;
-                    // We don't return false here because the write physically succeeded
-                }
-            }
-            cache_mutex.unlock();
-
-            std::cout << "Successfully wrote to " << filename << " and marked as changed." << std::endl;
-            return true;
         }
-    } 
+        auto it = opened_files.find(file_location);
+        if (it == opened_files.end()) {
+            std::cerr << "File found in cache but it is not opened. Open the file by calling open_file()" << std::endl;
+            return false;
+        }
+        auto m_it = file_mutexes.find(file_location);
+        if (m_it == file_mutexes.end()) {
+            std::cerr << "No mutex for file: " << file_location << " when writing" << std::endl;
+            return false;
+        }
+        file_mtx = m_it->second;
+        write_stream = it->second.write_stream;
+    }
+
+    std::lock_guard<std::mutex> file_lock(*file_mtx);
+    std::ofstream& file_stream = *write_stream;
+    file_stream.seekp(position);
+    if (file_stream.fail()) {
+        std::cerr << "Error: Failed to seek to position " << position << " in " << filename << std::endl;
+        file_stream.clear(); // clear the fail bit
+        return false;
+    }
+
+    file_stream.write(data.data(), data.size());
+    file_stream.flush();
+
+    if (file_stream.fail()) {
+        std::cerr << "Error: Failed to write data to " << filename << std::endl;
+        return false;
+    }
+
+    // Mark the file content as changed for eventual upload, and update cached_attr.
+    // Single critical section instead of three lock/unlock pairs.
+    {
+        std::lock_guard<std::mutex> g(cache_mutex);
+        auto cache_it = cache.find(file_location);
+        if (cache_it != cache.end()) {
+            cache_it->second.locally_modified = true;
+        }
+
+        // Reconstruct the key exactly how get_attributes does it
+        std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+        auto attr_it = cached_attr.find(file_loca_server);
+        if (attr_it != cached_attr.end()) {
+            try {
+                // Update Size: Get the actual size of the local file on disk
+                // This handles both overwrites (size same) and appends (size grows) automatically
+                uintmax_t new_size = std::filesystem::file_size(file_location);
+                attr_it->second.size = static_cast<int64_t>(new_size);
+
+                // Get current time in nanoseconds
+                auto now = std::chrono::system_clock::now();
+                auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+
+                attr_it->second.mtime = static_cast<int64_t>(now_ns);
+
+                // We do not change uid/gid here, preserving the "local machine" spoofing
+                // I set in get_attributes.
+
+                std::cout << "Updated cached attributes for " << filename << ": Size=" << new_size << std::endl;
+
+            } catch (const std::filesystem::filesystem_error& e) {
+                std::cerr << "Warning: Failed to update cached attributes size: " << e.what() << std::endl;
+                // We don't return false here because the write physically succeeded
+            }
+        }
+    }
+
+    std::cout << "Successfully wrote to " << filename << " and marked as changed." << std::endl;
+    return true;
 }
 
 bool FileSystemClient::create_file(const std::string& filename, const std::string& path) {
@@ -554,9 +558,9 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     cache[file_location] = file_info;
     cache_mutex.unlock();
 
-    auto read_stream = std::make_unique<std::ifstream>(file_location, std::ios::binary);
-    auto write_stream = std::make_unique<std::ofstream>(file_location, std::ios::binary | std::ios::in);
-    
+    auto read_stream = std::make_shared<std::ifstream>(file_location, std::ios::binary);
+    auto write_stream = std::make_shared<std::ofstream>(file_location, std::ios::binary | std::ios::in);
+
     if (!read_stream || !read_stream->is_open() || !write_stream || !write_stream->is_open()) {
         std::cerr << "Failed to open newly created file stream for: " << file_location<< std::endl;
         cache_mutex.lock();
@@ -634,12 +638,14 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
 
 
     bool needs_flush = cache_it->second.locally_modified;
-    std::ofstream* write_stream_ptr = opened_file_it->second.write_stream.get();
-    std::ifstream* read_stream_ptr = opened_file_it->second.read_stream.get();
+    // shared_ptr copies keep the streams alive even if another thread replaces or
+    // erases the opened_files entry between dropping global_lock and taking file_lock.
+    std::shared_ptr<std::ofstream> write_stream = opened_file_it->second.write_stream;
+    std::shared_ptr<std::ifstream> read_stream  = opened_file_it->second.read_stream;
 
 
     // 2. Unlock Global Mutex (Prevent freezing the whole client during upload)
-    global_lock.unlock(); 
+    global_lock.unlock();
 
     // 3. Lock File Mutex (Prevent local modification during upload)
     std::lock_guard<std::mutex> file_lock(*file_mtx);
@@ -647,17 +653,16 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
     if (needs_flush) {
         std::cout << "File '" << filename << "' was modified. Flushing to server..." << std::endl;
 
-        // Use the SAVED pointer
-        write_stream_ptr->flush();
-        
-        if(write_stream_ptr->fail()) {
+        write_stream->flush();
+
+        if(write_stream->fail()) {
             std::cerr << "Error: Failed to flush write stream before closing." << std::endl;
             return false;
         }
-        
+
         // Close streams to release OS locks
-        read_stream_ptr->close();
-        write_stream_ptr->close();
+        read_stream->close();
+        write_stream->close();
         
         // Now open a new read stream for uploading
         std::ifstream file_stream(file_location, std::ios::binary);
@@ -828,6 +833,12 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
     // Only rename locally if the item exists in cache
     if (std::filesystem::exists(old_local_path)) {
         try {
+            // Ensure the destination's cache parent directory exists.
+            // Without this, moving a file into a folder whose cache subdir
+            // hasn't been materialized yet fails with ENOENT on the rename.
+            std::error_code mk_ec;
+            std::filesystem::create_directories(
+                std::filesystem::path(new_local_path).parent_path(), mk_ec);
             std::filesystem::rename(old_local_path, new_local_path);
             std::cout << "[RENAME] Successfully renamed locally" << std::endl;
         } catch (const std::filesystem::filesystem_error& e) {
@@ -914,14 +925,54 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
 
 bool FileSystemClient::truncate_file(const std::string& filename, const std::string& path, const int size){
     std::string resolved_path = resolve_server_path(path);
-    std::string cache_path = std::string(cache_directory) + (resolved_path[0] == '/'? "" : "/" ) + resolved_path +filename;
-    try{
-        std::filesystem::resize_file(cache_path, size);
-    } catch(std::filesystem::filesystem_error& e){
-        std::cerr << "Error: " << e.what() << '\n';
-        std::cerr << "Path1: " << e.path1() << '\n';
-        std::cerr << "Error code: " << e.code().message() << '\n';
+    std::string cache_path = std::string(cache_directory) + (resolved_path[0] == '/' ? "" : "/") + resolved_path
+                           + (resolved_path.back() == '/' ? "" : "/") + filename;
+
+    // 1. RPC-first: server is authoritative
+    grpc::ClientContext context;
+    afs_operation::Truncate_request request;
+    afs_operation::Truncate_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+    request.set_size(size);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->truncate(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server truncate failed: " << status.error_message() << std::endl;
         return false;
+    }
+
+    // 2. Best-effort local cache resize, serialized against concurrent writers
+    std::shared_ptr<std::mutex> file_mtx;
+    {
+        std::lock_guard<std::mutex> global_lock(cache_mutex);
+        auto m_it = file_mutexes.find(cache_path);
+        if (m_it != file_mutexes.end()) file_mtx = m_it->second;
+    }
+    if (file_mtx) {
+        std::lock_guard<std::mutex> file_lock(*file_mtx);
+        std::error_code ec;
+        std::filesystem::resize_file(cache_path, size, ec);
+        if (ec && ec != std::errc::no_such_file_or_directory) {
+            std::cerr << "Warning: failed to resize local cache " << cache_path << ": " << ec.message() << std::endl;
+        }
+    } else {
+        std::error_code ec;
+        std::filesystem::resize_file(cache_path, size, ec);
+        if (ec && ec != std::errc::no_such_file_or_directory) {
+            std::cerr << "Warning: failed to resize local cache " << cache_path << ": " << ec.message() << std::endl;
+        }
+    }
+
+    // 3. Update cached_attr
+    std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    auto attr_it = cached_attr.find(file_loca_server);
+    if (attr_it != cached_attr.end()) {
+        attr_it->second.size = static_cast<int64_t>(size);
+        attr_it->second.mtime = response.timestamp();
+        attr_it->second.ctime = response.timestamp();
     }
     return true;
 }
@@ -999,6 +1050,413 @@ bool FileSystemClient::delete_file(const std::string& directory){
         std::cout << "File deleted successfully on the local cache at: " << cache_path << std::endl;
     }else{
         std::cerr << "Warning: Failed to remove local cache file: " << ec.message() << std::endl;
+    }
+    return true;
+}
+
+
+// === delete_directory: rmdir RPC with POSIX-strict error semantics ===
+int FileSystemClient::delete_directory(const std::string& directory){
+    std::string resolved_path = resolve_server_path(directory);
+    std::string cache_path = std::string(cache_directory) + (resolved_path[0] == '/' ? "" : "/") + resolved_path;
+    if (cache_path.size() > 1 && cache_path.back() == '/') cache_path.pop_back();
+
+    // Sweep cache, opened_files, cached_attr, file_mutexes for any keys at or under the directory prefix.
+    auto sweep = [](auto& map, const std::string& prefix) {
+        auto it = map.begin();
+        while (it != map.end()) {
+            const std::string& key = it->first;
+            bool exact = (key == prefix);
+            bool child = (key.size() > prefix.size()
+                          && key.compare(0, prefix.size(), prefix) == 0
+                          && key[prefix.size()] == '/');
+            if (exact || child) {
+                it = map.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    };
+
+    {
+        std::lock_guard<std::mutex> global_lock(cache_mutex);
+        sweep(cache, cache_path);
+        sweep(opened_files, cache_path);
+        sweep(file_mutexes, cache_path);
+        sweep(cached_attr, resolved_path);
+    }
+
+    grpc::ClientContext context;
+    afs_operation::Rmdir_request request;
+    afs_operation::Rmdir_response response;
+    request.set_directory(resolved_path);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->rmdir(&context, request, &response);
+    if (!status.ok()) {
+        switch (status.error_code()) {
+            case grpc::StatusCode::FAILED_PRECONDITION: return -ENOTEMPTY;
+            case grpc::StatusCode::NOT_FOUND:           return -ENOENT;
+            case grpc::StatusCode::PERMISSION_DENIED:   return -EACCES;
+            default: return -EIO;
+        }
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(cache_path, ec);
+    return 0;
+}
+
+
+// === change_mode: chmod RPC ===
+bool FileSystemClient::change_mode(const std::string& filename, const std::string& directory, uint32_t mode){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::Chmod_request request;
+    afs_operation::Chmod_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+    request.set_mode(mode);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->chmod(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server chmod failed: " << status.error_message() << std::endl;
+        return false;
+    }
+
+    std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    auto it = cached_attr.find(file_loca_server);
+    if (it != cached_attr.end()) {
+        // preserve the upper file-type bits
+        it->second.mode = (it->second.mode & ~0xFFF) | (mode & 0xFFF);
+        it->second.ctime = response.timestamp();
+    }
+    return true;
+}
+
+
+// === change_owner: chown RPC ===
+// NOTE: get_attributes() spoofs uid/gid to the local user (line 115), so client `ls -l`
+// won't reflect server-side ownership even after a successful chown. The server is
+// updated authoritatively, however.
+bool FileSystemClient::change_owner(const std::string& filename, const std::string& directory, uint32_t uid, uint32_t gid){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::Chown_request request;
+    afs_operation::Chown_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+    request.set_uid(uid);
+    request.set_gid(gid);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->chown(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server chown failed: " << status.error_message() << std::endl;
+        return false;
+    }
+
+    std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    auto it = cached_attr.find(file_loca_server);
+    if (it != cached_attr.end()) {
+        // keep the spoofed uid/gid; only refresh ctime
+        it->second.ctime = response.timestamp();
+    }
+    return true;
+}
+
+
+// === set_times: utimens RPC ===
+bool FileSystemClient::set_times(const std::string& filename, const std::string& directory, int64_t atime_ns, int64_t mtime_ns){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::Utimens_request request;
+    afs_operation::Utimens_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+    request.set_atime(atime_ns);
+    request.set_mtime(mtime_ns);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->utimens(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server utimens failed: " << status.error_message() << std::endl;
+        return false;
+    }
+
+    std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    auto it = cached_attr.find(file_loca_server);
+    if (it != cached_attr.end()) {
+        it->second.atime = atime_ns;
+        it->second.mtime = mtime_ns;
+    }
+    return true;
+}
+
+
+// === create_symlink ===
+// Symlinks are NOT cached locally - the dereferencing semantics make caching dangerous.
+bool FileSystemClient::create_symlink(const std::string& target, const std::string& linkpath_dir, const std::string& linkpath_name){
+    std::string resolved_dir = resolve_server_path(linkpath_dir);
+
+    grpc::ClientContext context;
+    afs_operation::Symlink_request request;
+    afs_operation::Symlink_response response;
+    request.set_target(target);
+    request.set_linkpath_dir(resolved_dir);
+    request.set_linkpath_name(linkpath_name);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->symlink(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server symlink failed: " << status.error_message() << std::endl;
+        return false;
+    }
+    return true;
+}
+
+
+// === read_symlink ===
+// Always hits the server. Symlink targets are not cached.
+bool FileSystemClient::read_symlink(const std::string& filename, const std::string& directory, std::string& out_target){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::Readlink_request request;
+    afs_operation::Readlink_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+
+    grpc::Status status = stub_->readlink(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server readlink failed: " << status.error_message() << std::endl;
+        return false;
+    }
+    if (!response.success()) return false;
+    out_target = response.target();
+    return true;
+}
+
+
+// === fsync_file: streamed flush_file RPC, mirrors close_file but does not erase opened_files ===
+bool FileSystemClient::fsync_file(const std::string& filename, const std::string& directory){
+    std::string resolved_path = resolve_server_path(directory);
+    std::string file_location = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") + resolved_path
+                              + (resolved_path.back() == '/' ? "" : "/") + filename;
+
+    std::unique_lock<std::mutex> global_lock(cache_mutex);
+
+    auto opened_file_it = opened_files.find(file_location);
+    if (opened_file_it == opened_files.end()) {
+        std::cerr << "Error: Cannot fsync '" << filename << "' because it is not open." << std::endl;
+        return false;
+    }
+
+    auto m_it = file_mutexes.find(file_location);
+    if (m_it == file_mutexes.end()) {
+        std::cerr << "No mutex for file: " << file_location << " when fsync" << std::endl;
+        return false;
+    }
+    std::shared_ptr<std::mutex> file_mtx = m_it->second;
+
+    auto cache_it = cache.find(file_location);
+    if (cache_it == cache.end()) {
+        std::cerr << "Error: Inconsistent state. File is open but not in cache." << std::endl;
+        return false;
+    }
+
+    // shared_ptr copy keeps the stream alive even if the entry is replaced/erased
+    // between dropping global_lock and taking file_lock.
+    std::shared_ptr<std::ofstream> write_stream = opened_file_it->second.write_stream;
+
+    global_lock.unlock();
+    std::lock_guard<std::mutex> file_lock(*file_mtx);
+
+    write_stream->flush();
+    if (write_stream->fail()) {
+        std::cerr << "Error: Failed to flush write stream before fsync." << std::endl;
+        return false;
+    }
+
+    // Re-open a fresh ifstream for upload (do not close the existing streams - file stays open)
+    std::ifstream file_stream(file_location, std::ios::binary);
+    if (!file_stream.is_open()) {
+        std::cerr << "Error: Could not re-open file for fsync: " << file_location << std::endl;
+        return false;
+    }
+
+    const std::size_t chunk_size = 4096;
+    char buffer[chunk_size];
+    afs_operation::Fsync_response response;
+    int num_of_tries = 0;
+    grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
+
+    while (num_of_tries < 3 && !status.ok()) {
+        grpc::ClientContext context;
+        std::unique_ptr<grpc::ClientWriter<afs_operation::FileRequest>> writer(
+            stub_->flush_file(&context, &response)
+        );
+
+        file_stream.clear();
+        file_stream.seekg(0, std::ios::beg);
+
+        bool sent_at_least_once = false;
+        while (true) {
+            file_stream.read(buffer, chunk_size);
+            std::streamsize len = file_stream.gcount();
+            if (len <= 0 && sent_at_least_once) break;
+
+            afs_operation::FileRequest request;
+            request.set_directory(resolved_path);
+            request.set_filename(filename);
+            request.set_content(buffer, len);
+            request.set_client_id(client_id);
+
+            if (!writer->Write(request)) break;
+            sent_at_least_once = true;
+
+            if (len <= 0) break;
+        }
+        writer->WritesDone();
+        status = writer->Finish();
+        num_of_tries++;
+    }
+
+    file_stream.close();
+
+    if (!status.ok()) {
+        std::cerr << "RPC failed during fsync: " << status.error_message() << std::endl;
+        return false;
+    }
+
+    global_lock.lock();
+    auto fresh_cache_it = cache.find(file_location);
+    if (fresh_cache_it != cache.end()) {
+        fresh_cache_it->second.timestamp = response.timestamp();
+        fresh_cache_it->second.locally_modified = false;
+    }
+    std::string file_loca_server = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    auto attr_it = cached_attr.find(file_loca_server);
+    if (attr_it != cached_attr.end()) {
+        attr_it->second.mtime = response.timestamp();
+        attr_it->second.ctime = response.timestamp();
+        try {
+            attr_it->second.size = std::filesystem::file_size(file_location);
+        } catch (...) {}
+    }
+    // do NOT erase opened_files / file_mutexes - file stays open
+    return true;
+}
+
+
+// === get_filesystem_stats: statfs RPC ===
+bool FileSystemClient::get_filesystem_stats(struct statvfs& out){
+    grpc::ClientContext context;
+    afs_operation::Statfs_request request;
+    afs_operation::Statfs_response response;
+
+    grpc::Status status = stub_->statfs(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server statfs failed: " << status.error_message() << std::endl;
+        return false;
+    }
+    std::memset(&out, 0, sizeof(out));
+    out.f_bsize  = response.bsize();
+    out.f_frsize = response.frsize();
+    out.f_blocks = response.blocks();
+    out.f_bfree  = response.bfree();
+    out.f_bavail = response.bavail();
+    out.f_files  = response.files();
+    out.f_ffree  = response.ffree();
+    return true;
+}
+
+
+// === xattr quartet ===
+bool FileSystemClient::set_xattr(const std::string& filename, const std::string& directory, const std::string& name, const std::string& value, int flags){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::SetXattr_request request;
+    afs_operation::SetXattr_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+    request.set_name(name);
+    request.set_value(value);
+    request.set_flags(flags);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->setxattr(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server setxattr failed: " << status.error_message() << std::endl;
+        return false;
+    }
+    return true;
+}
+
+int FileSystemClient::get_xattr(const std::string& filename, const std::string& directory, const std::string& name, std::string& out){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::GetXattr_request request;
+    afs_operation::GetXattr_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+    request.set_name(name);
+
+    grpc::Status status = stub_->getxattr(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server getxattr failed: " << status.error_message() << std::endl;
+        return -1;
+    }
+    if (!response.found()) return -1;
+    out = response.value();
+    return static_cast<int>(out.size());
+}
+
+bool FileSystemClient::list_xattr(const std::string& filename, const std::string& directory, std::vector<std::string>& out){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::ListXattr_request request;
+    afs_operation::ListXattr_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+
+    grpc::Status status = stub_->listxattr(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server listxattr failed: " << status.error_message() << std::endl;
+        return false;
+    }
+    out.clear();
+    for (const auto& n : response.names()) {
+        out.push_back(n);
+    }
+    return true;
+}
+
+bool FileSystemClient::remove_xattr(const std::string& filename, const std::string& directory, const std::string& name){
+    std::string resolved_path = resolve_server_path(directory);
+
+    grpc::ClientContext context;
+    afs_operation::RemoveXattr_request request;
+    afs_operation::RemoveXattr_response response;
+    request.set_directory(resolved_path);
+    request.set_filename(filename);
+    request.set_name(name);
+    request.set_client_id(client_id);
+
+    grpc::Status status = stub_->removexattr(&context, request, &response);
+    if (!status.ok()) {
+        std::cerr << "Server removexattr failed: " << status.error_message() << std::endl;
+        return false;
     }
     return true;
 }

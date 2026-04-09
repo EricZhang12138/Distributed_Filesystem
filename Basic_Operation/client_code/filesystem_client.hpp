@@ -3,8 +3,8 @@
 #include <string>
 #include <map>
 #include <memory>       // For std::unique_ptr, std::shared_ptr
-#include <fstream>     
-#include <optional>    
+#include <fstream>
+#include <optional>
 #include <grpcpp/grpcpp.h>
 #include "afs_operation.grpc.pb.h"
 #include "afs_operation.pb.h"
@@ -16,6 +16,8 @@
 #include <thread>
 #include <unordered_map>
 #include <mutex>
+#include <vector>
+#include <sys/statvfs.h>
 
 class FileSystemClient {
 private:
@@ -25,8 +27,12 @@ private:
         std::string filename; // The base name of the file
     };
     struct FileStreams {
-        std::unique_ptr<std::ifstream> read_stream;
-        std::unique_ptr<std::ofstream> write_stream;
+        // shared_ptr (not unique_ptr) so close_file / fsync_file / read_file / write_file
+        // can copy the handle and keep the streams alive past a concurrent erase or replace
+        // of the opened_files map entry. Without this, capturing raw .get() pointers and
+        // then dropping cache_mutex briefly is a use-after-free hazard.
+        std::shared_ptr<std::ifstream> read_stream;
+        std::shared_ptr<std::ofstream> write_stream;
     };
     // The gRPC stub for communicating with the server
     std::unique_ptr<afs_operation::operators::Stub> stub_;
@@ -109,4 +115,17 @@ public:
     bool make_directory(const std::string& directory, const uint32_t mode);
 
     bool delete_file(const std::string& directory);
+
+    int  delete_directory(const std::string& directory);   // returns 0 or -errno
+    bool change_mode (const std::string& filename, const std::string& directory, uint32_t mode);
+    bool change_owner(const std::string& filename, const std::string& directory, uint32_t uid, uint32_t gid);
+    bool set_times   (const std::string& filename, const std::string& directory, int64_t atime_ns, int64_t mtime_ns);
+    bool create_symlink(const std::string& target, const std::string& linkpath_dir, const std::string& linkpath_name);
+    bool read_symlink (const std::string& filename, const std::string& directory, std::string& out_target);
+    bool fsync_file  (const std::string& filename, const std::string& directory);
+    bool get_filesystem_stats(struct statvfs& out);
+    bool set_xattr   (const std::string& filename, const std::string& directory, const std::string& name, const std::string& value, int flags);
+    int  get_xattr   (const std::string& filename, const std::string& directory, const std::string& name, std::string& out);
+    bool list_xattr  (const std::string& filename, const std::string& directory, std::vector<std::string>& out);
+    bool remove_xattr(const std::string& filename, const std::string& directory, const std::string& name);
 };

@@ -106,6 +106,53 @@ message GetStatusResponse {
 }
 
 
+// === Group A: rmdir ===
+message Rmdir_request  { string directory = 1; string client_id = 2; }
+message Rmdir_response { bool success = 1; }
+
+// === Group B: chmod ===
+message Chmod_request  { string directory = 1; string filename = 2; uint32 mode = 3; string client_id = 4; }
+message Chmod_response { bool success = 1; int64 timestamp = 2; }
+
+// === Group C: chown ===
+message Chown_request  { string directory = 1; string filename = 2; uint32 uid = 3; uint32 gid = 4; string client_id = 5; }
+message Chown_response { bool success = 1; int64 timestamp = 2; }
+
+// === Group D: utimens ===
+message Utimens_request  { string directory = 1; string filename = 2; int64 atime = 3; int64 mtime = 4; string client_id = 5; }
+message Utimens_response { bool success = 1; }
+
+// === Group E: symlink / readlink ===
+message Symlink_request  { string target = 1; string linkpath_dir = 2; string linkpath_name = 3; string client_id = 4; }
+message Symlink_response { bool success = 1; }
+message Readlink_request  { string directory = 1; string filename = 2; }
+message Readlink_response { string target = 1; bool success = 2; }
+
+// === Group F: server-side truncate ===
+message Truncate_request  { string directory = 1; string filename = 2; int64 size = 3; string client_id = 4; }
+message Truncate_response { bool success = 1; int64 timestamp = 2; }
+
+// === Group G: fsync (reuses FileRequest for streamed payload) ===
+message Fsync_response { bool success = 1; int64 timestamp = 2; }
+
+// === Group H: statfs ===
+message Statfs_request  {}
+message Statfs_response {
+    uint64 bsize = 1; uint64 frsize = 2;
+    uint64 blocks = 3; uint64 bfree = 4; uint64 bavail = 5;
+    uint64 files = 6; uint64 ffree = 7;
+}
+
+// === Group I: xattr ===
+message SetXattr_request  { string directory = 1; string filename = 2; string name = 3; bytes value = 4; int32 flags = 5; string client_id = 6; }
+message SetXattr_response { bool success = 1; }
+message GetXattr_request  { string directory = 1; string filename = 2; string name = 3; }
+message GetXattr_response { bytes value = 1; bool found = 2; }
+message ListXattr_request  { string directory = 1; string filename = 2; }
+message ListXattr_response { repeated string names = 1; }
+message RemoveXattr_request  { string directory = 1; string filename = 2; string name = 3; string client_id = 4; }
+message RemoveXattr_response { bool success = 1; }
+
 
 service operators{
     rpc request_dir (InitialiseRequest) returns (InitialiseResponse);
@@ -117,6 +164,19 @@ service operators{
     rpc rename (RenameRequest) returns (RenameResponse);
     rpc mkdir (MakeDir_request) returns (MakeDir_response);
     rpc unlink (Delete_request) returns (Delete_response);
+    rpc rmdir       (Rmdir_request)        returns (Rmdir_response);
+    rpc chmod       (Chmod_request)        returns (Chmod_response);
+    rpc chown       (Chown_request)        returns (Chown_response);
+    rpc utimens     (Utimens_request)      returns (Utimens_response);
+    rpc symlink     (Symlink_request)      returns (Symlink_response);
+    rpc readlink    (Readlink_request)     returns (Readlink_response);
+    rpc truncate    (Truncate_request)     returns (Truncate_response);
+    rpc flush_file  (stream FileRequest)   returns (Fsync_response);
+    rpc statfs      (Statfs_request)       returns (Statfs_response);
+    rpc setxattr    (SetXattr_request)     returns (SetXattr_response);
+    rpc getxattr    (GetXattr_request)     returns (GetXattr_response);
+    rpc listxattr   (ListXattr_request)    returns (ListXattr_response);
+    rpc removexattr (RemoveXattr_request)  returns (RemoveXattr_response);
     rpc subscribe(SubscribeRequest) returns (stream Notification);
     rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
 }
