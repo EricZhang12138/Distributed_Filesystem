@@ -6,7 +6,7 @@
 grpc::Status FileSystem::subscribe(grpc::ServerContext* context, 
                                    const afs_operation::SubscribeRequest* request, 
                                    grpc::ServerWriter<afs_operation::Notification>* writer) {
-    
+
     std::string client_id = request->client_id();
     std::cout << "Client subscribed: " << client_id << std::endl;
     
@@ -31,9 +31,9 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
         std::cout << "Client " << client_id << " context cancelled, shutting down queue" << std::endl;
         queue->cancel();
     });
-    monitor.detach();
+    
     // when the thread function completes it is automatically handled by the OS
-    // it completely detaches from this current thread and becomes a daemon thread 
+
 
      // This thread will now "sleep" inside queue->pop() until an event happens
     afs_operation::Notification note;
@@ -48,7 +48,7 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
 
     // clean up the three maps: file_map, client_db, subscribers
     cleanup_client(client_id);
-    
+    monitor.join();
     return grpc::Status::OK;
 }
 
