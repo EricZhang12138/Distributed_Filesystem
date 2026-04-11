@@ -22,7 +22,7 @@ struct NotificationQueue{
     std::queue<afs_operation::Notification> queue;
     std::mutex mu;
     std::condition_variable cv;
-    bool shutdown = true;
+    bool shutdown = false;
 
     // push for the producer (unlink/close/rename function calls) and it wakes up one thread 
     void push(afs_operation::Notification notif){

@@ -13,7 +13,6 @@ grpc::Status FileSystem::subscribe(grpc::ServerContext* context,
 
     // Create a queue for this client
     std::shared_ptr<NotificationQueue> queue = std::make_shared<NotificationQueue>(); // a notification queue shared pointer
-    queue -> shutdown = false;
     // when we call make_shared, we create a new object on the heap and then a pointer on the stack that points to the object
     {
         std::lock_guard<std::mutex> lock(subscriber_mutex);

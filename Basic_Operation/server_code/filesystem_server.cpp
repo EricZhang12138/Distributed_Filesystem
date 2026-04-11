@@ -351,6 +351,7 @@ grpc::Status FileSystem::request_dir(grpc::ServerContext* context, const afs_ope
         response->set_root_path(root_dir);
         if (request -> client_id() != ""){
             std::string client_id = request -> client_id();
+            std::lock_guard<std::mutex> lock(client_db_mutex);
             if (clients_db.find(client_id) == clients_db.end()){ // client is not in the clients_db yet so we are good
                 clients_db.insert(client_id);
                 std::cout << "Connection successful and the client ID is " << client_id << std::endl;
