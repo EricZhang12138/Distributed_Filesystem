@@ -1,5 +1,7 @@
 #include "filesystem_server.hpp"
 #include "subscriber_handler.hpp"
+#include "metadata.grpc.pb.h"
+#include "metadata.pb.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -12,6 +14,7 @@
 #include <cerrno>
 #include <cstring>
 #include <vector>
+#include <atomic>
 
 
 
@@ -1164,14 +1167,86 @@ FileSystem::FileSystem(std::string root_dir_input): root_dir(root_dir_input){
 // --- Main Application Entry Point ---
 
 int main(int argc, char** argv){
-    if (argc != 2){
-        return 1; // fail and end
+    std::string path;
+    std::string metadata_address;
+    std::string advertise_address;  // The address clients should use to reach this data server
+
+    // Parse args: ./afs_server /path/to/root [--metadata host:port] [--address host:port]
+    for (int i = 1; i < argc; i++) {
+        if (std::string(argv[i]) == "--metadata" && i + 1 < argc) {
+            metadata_address = argv[i + 1];
+            i++;
+        } else if (std::string(argv[i]) == "--address" && i + 1 < argc) {
+            advertise_address = argv[i + 1];
+            i++;
+        } else if (path.empty()) {
+            path = argv[i];
+        }
     }
-    std::string path(argv[1]);
+
+    if (path.empty()) {
+        std::cerr << "Usage: afs_server <root_dir> [--metadata <host:port>] [--address <host:port>]" << std::endl;
+        return 1;
+    }
+
+    // Default advertise address: localhost:50051 (what clients connect to)
+    if (advertise_address.empty()) {
+        advertise_address = "localhost:50051";
+    }
+
     FileSystem filesys(path);
     std::cout << "Running filesystem server...... Current root directory on the server is " << path << std::endl;
+
+    // If metadata server address is provided, register and start heartbeat
+    std::atomic<bool> heartbeat_running{false};
+    std::thread heartbeat_thread;
+
+    if (!metadata_address.empty()) {
+        auto meta_channel = grpc::CreateChannel(metadata_address, grpc::InsecureChannelCredentials());
+        auto meta_stub = metadata::MetadataService::NewStub(meta_channel);
+
+        // Register with metadata server — advertise_address is what clients will use
+        {
+            grpc::ClientContext ctx;
+            metadata::RegisterRequest req;
+            req.set_address(advertise_address);
+            req.set_root_dir(path);
+            metadata::RegisterResponse resp;
+            grpc::Status status = meta_stub->RegisterDataServer(&ctx, req, &resp);
+            if (status.ok() && resp.success()) {
+                std::cout << "Registered with metadata server at " << metadata_address
+                          << " (advertised as " << advertise_address << ")" << std::endl;
+            } else {
+                std::cerr << "Failed to register with metadata server: " << status.error_message() << std::endl;
+            }
+        }
+
+        // Start heartbeat thread
+        heartbeat_running = true;
+        heartbeat_thread = std::thread([&heartbeat_running, meta_stub = std::move(meta_stub), advertise_address]() mutable {
+            while (heartbeat_running) {
+                std::this_thread::sleep_for(std::chrono::seconds(10));
+                if (!heartbeat_running) break;
+
+                grpc::ClientContext ctx;
+                metadata::HeartbeatRequest req;
+                req.set_address(advertise_address);
+                metadata::HeartbeatResponse resp;
+                grpc::Status status = meta_stub->Heartbeat(&ctx, req, &resp);
+                if (!status.ok()) {
+                    std::cerr << "Heartbeat failed: " << status.error_message() << std::endl;
+                }
+            }
+        });
+    }
+
     filesys.RunServer();
 
+    // Cleanup
+    heartbeat_running = false;
+    if (heartbeat_thread.joinable()) {
+        heartbeat_thread.join();
+    }
 
     std::cout << "Server Stopped" << std::endl;
     return 0;

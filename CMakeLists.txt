@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 add_definitions(-D_FILE_OFFSET_BITS=64)
 # 1. Dependencies
 find_package(gRPC REQUIRED)
-find_package(Protobuf REQUIRED) 
+find_package(Protobuf REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Boost REQUIRED)
 pkg_check_modules(FUSE REQUIRED fuse)
@@ -14,6 +14,7 @@ pkg_check_modules(FUSE REQUIRED fuse)
 # 2. File Generation Setup
 set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Basic_Operation/proto_files")
 set(PROTO_FILE "${PROTO_DIR}/afs_operation.proto")
+set(META_PROTO_FILE "${PROTO_DIR}/metadata.proto")
 
 find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin)
 find_program(GRPC_PYTHON_PLUGIN grpc_python_plugin)
@@ -21,7 +22,7 @@ if(NOT GRPC_PYTHON_PLUGIN)
     message(FATAL_ERROR "grpc_python_plugin not found")
 endif()
 
-# Define ALL generated files (Both standard Proto and gRPC)
+# Define ALL generated files for afs_operation.proto
 set(PROTO_SRCS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.pb.cc")
 set(PROTO_HDRS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.pb.h")
 set(GRPC_SRCS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.grpc.pb.cc")
@@ -29,7 +30,13 @@ set(GRPC_HDRS "${CMAKE_CURRENT_BINARY_DIR}/afs_operation.grpc.pb.h")
 set(PROTO_PY "${CMAKE_CURRENT_BINARY_DIR}/afs_operation_pb2.py")
 set(GRPC_PY "${CMAKE_CURRENT_BINARY_DIR}/afs_operation_pb2_grpc.py")
 
-# Generate the codes for grpc
+# Define generated files for metadata.proto
+set(META_PROTO_SRCS "${CMAKE_CURRENT_BINARY_DIR}/metadata.pb.cc")
+set(META_PROTO_HDRS "${CMAKE_CURRENT_BINARY_DIR}/metadata.pb.h")
+set(META_GRPC_SRCS "${CMAKE_CURRENT_BINARY_DIR}/metadata.grpc.pb.cc")
+set(META_GRPC_HDRS "${CMAKE_CURRENT_BINARY_DIR}/metadata.grpc.pb.h")
+
+# Generate the codes for afs_operation.proto
 add_custom_command(
     OUTPUT ${PROTO_SRCS} ${PROTO_HDRS} ${GRPC_SRCS} ${GRPC_HDRS} ${PROTO_PY} ${GRPC_PY}
     COMMAND protobuf::protoc
@@ -45,8 +52,20 @@ add_custom_command(
     DEPENDS ${PROTO_FILE}
 )
 
+# Generate the codes for metadata.proto
+add_custom_command(
+    OUTPUT ${META_PROTO_SRCS} ${META_PROTO_HDRS} ${META_GRPC_SRCS} ${META_GRPC_HDRS}
+    COMMAND protobuf::protoc
+    ARGS --grpc_out="${CMAKE_CURRENT_BINARY_DIR}"
+         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+         --plugin=protoc-gen-grpc="${GRPC_CPP_PLUGIN}"
+         -I "${PROTO_DIR}"
+         "${META_PROTO_FILE}"
+    DEPENDS ${META_PROTO_FILE} ${PROTO_FILE}
+)
 
-# add_executable determines the .o files we gonna generate after compilation. 
+
+# add_executable determines the .o files we gonna generate after compilation.
 # one for filesystem_client.cpp , one for FUSE_integration.cpp and so on.
 # 3. Client Executable
 add_executable(afs_client
@@ -54,6 +73,8 @@ add_executable(afs_client
     FUSE/FUSE_integration.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS}
 )
 
 target_include_directories(afs_client PRIVATE
@@ -75,6 +96,8 @@ add_executable(afs_server
     Basic_Operation/server_code/filesystem_server.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS}
 )
 
 target_include_directories(afs_server PRIVATE
@@ -88,12 +111,34 @@ target_link_libraries(afs_server
     protobuf::libprotobuf
 )
 
+# 4b. Metadata Server Executable
+add_executable(afs_metadata_server
+    Basic_Operation/metadata_server/metadata_server.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS}
+)
+
+target_include_directories(afs_metadata_server PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    Basic_Operation/metadata_server        # To find metadata_server.hpp
+    "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
+)
+
+target_link_libraries(afs_metadata_server
+    gRPC::grpc++
+    protobuf::libprotobuf
+)
+
 # 5. Test Filesystem 1
 add_executable(client_test
     Basic_Operation/test/Operation_Test.cpp
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
-    ${GRPC_SRCS})
+    ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS})
 
 target_include_directories(client_test PRIVATE
     Basic_Operation/client_code
@@ -103,7 +148,8 @@ target_include_directories(client_test PRIVATE
 
 target_link_libraries(client_test
     gRPC::grpc++
-    protobuf::libprotobuf)
+    protobuf::libprotobuf
+    Boost::boost)
 
 # 6. Test Filesystem 2
 add_executable(register_test
@@ -111,6 +157,8 @@ add_executable(register_test
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS}
 )
 
 target_include_directories(register_test PRIVATE
@@ -121,7 +169,8 @@ target_include_directories(register_test PRIVATE
 
 target_link_libraries(register_test
     gRPC::grpc++
-    protobuf::libprotobuf)
+    protobuf::libprotobuf
+    Boost::boost)
 
 # 7. CI Test Client 1
 add_executable(ci_test_client_1
@@ -129,6 +178,8 @@ add_executable(ci_test_client_1
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS}
 )
 
 target_include_directories(ci_test_client_1 PRIVATE
@@ -149,6 +200,8 @@ add_executable(ci_test_client_2
     Basic_Operation/client_code/filesystem_client.cpp
     ${PROTO_SRCS}
     ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS}
 )
 
 target_include_directories(ci_test_client_2 PRIVATE

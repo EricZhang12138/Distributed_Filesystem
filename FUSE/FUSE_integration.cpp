@@ -471,19 +471,20 @@ static int afs_readlink(const char *path, char *buf, size_t size) {
 }
 
 
-// Carries the server address from main() into afs_init() so we can construct
-// the FileSystemClient *after* fuse_main() has daemonized (forked). gRPC is
-// not fork-safe: any threads/channels created before the fork are orphaned in
-// the parent and the child's first RPC hangs forever.
+// Carries the metadata server address from main() into afs_init() so we can
+// construct the FileSystemClient *after* fuse_main() has daemonized (forked).
+// gRPC is not fork-safe: any threads/channels created before the fork are
+// orphaned in the parent and the child's first RPC hangs forever.
 struct AfsBootstrap {
-    std::string address;
+    std::string metadata_address;  // Now points to the metadata server
 };
 
 static void* afs_init(struct fuse_conn_info *conn) {
     (void) conn;
     auto* boot = static_cast<AfsBootstrap*>(fuse_get_context()->private_data);
-    auto channel = grpc::CreateChannel(boot->address, grpc::InsecureChannelCredentials());
-    FileSystemClient* client = new FileSystemClient(channel);
+    // Connect to metadata server; the client will obtain data server address via Init RPC
+    auto metadata_channel = grpc::CreateChannel(boot->metadata_address, grpc::InsecureChannelCredentials());
+    FileSystemClient* client = new FileSystemClient(metadata_channel);
     // FUSE replaces private_data with whatever we return here, so all subsequent
     // fuse_get_context()->private_data lookups (used by get_client()) will see
     // the FileSystemClient*.
@@ -524,11 +525,25 @@ static fuse_operations afs_oper = {
 
 
 int main(int argc, char *argv[]){
-    const char* env_addr = std::getenv("SERVER_ADDRESS");
-    AfsBootstrap boot{ env_addr ? std::string(env_addr) : "localhost:50051" };
+    // Parse --metadata <host:port> from argv, strip it before passing to fuse_main
+    std::string metadata_address = "localhost:50050";
+    std::vector<char*> fuse_argv;
+
+    for (int i = 0; i < argc; i++) {
+        if (std::string(argv[i]) == "--metadata" && i + 1 < argc) {
+            metadata_address = argv[i + 1];
+            i++; // skip the value too
+        } else {
+            fuse_argv.push_back(argv[i]);
+        }
+    }
+
+    int fuse_argc = static_cast<int>(fuse_argv.size());
+
+    AfsBootstrap boot{ metadata_address };
     // Pass the bootstrap pointer through fuse_main; afs_init will read it and
     // return the real FileSystemClient* as the long-lived private_data.
-    return fuse_main(argc, argv, &afs_oper, &boot);
+    return fuse_main(fuse_argc, fuse_argv.data(), &afs_oper, &boot);
 }
 
 

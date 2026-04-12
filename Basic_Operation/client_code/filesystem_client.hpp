@@ -8,6 +8,8 @@
 #include <grpcpp/grpcpp.h>
 #include "afs_operation.grpc.pb.h"
 #include "afs_operation.pb.h"
+#include "metadata.grpc.pb.h"
+#include "metadata.pb.h"
 #include <filesystem>
 #include <boost/uuid/uuid.hpp>  // universally unique identifier
 #include <boost/uuid/uuid_generators.hpp>
@@ -25,6 +27,7 @@ private:
         bool locally_modified;      // True if the local copy has been modified and then if locally_modified == true, we push it to the server on close()
         int64_t timestamp;    // The last known timestamp from the server
         std::string filename; // The base name of the file
+        std::string server_address; // Which data server holds this file (for Phase 2)
     };
     struct FileStreams {
         // shared_ptr (not unique_ptr) so close_file / fsync_file / read_file / write_file
@@ -34,8 +37,17 @@ private:
         std::shared_ptr<std::ifstream> read_stream;
         std::shared_ptr<std::ofstream> write_stream;
     };
-    // The gRPC stub for communicating with the server
+    // Metadata server stub (structural ops: ls, getattr, mkdir, etc.)
+    std::unique_ptr<metadata::MetadataService::Stub> metadata_stub_;
+    // Data server stub — direct connection for content ops (open, close, flush, truncate, subscribe)
     std::unique_ptr<afs_operation::operators::Stub> stub_;
+    // Data server address (populated from metadata Init response)
+    std::string data_server_address_;
+    // Map of data server address -> stub (for Phase 2 multi-server support)
+    std::unordered_map<std::string, std::shared_ptr<afs_operation::operators::Stub>> data_stubs_;
+    std::mutex stubs_mutex_;
+    // Helper: get or create a data server stub
+    afs_operation::operators::Stub* get_data_stub(const std::string& address);
     // In-memory cache of file metadata. key is the directory of the file on the client machine (within the cache)
     std::map<std::string, FileInfo> cache;
     // Map of locally open file handles. Key is the directory of the file on the client machine (within the cache)
@@ -56,7 +68,7 @@ public:
      * @brief Constructs the client and initializes the connection with the server.
      * @param channel The gRPC channel to use for communication.
      */
-    FileSystemClient(std::shared_ptr<grpc::Channel> channel, std::string cache_path = "./tmp/cache");
+    FileSystemClient(std::shared_ptr<grpc::Channel> metadata_channel, std::string cache_path = "./tmp/cache");
     ~FileSystemClient();
 
     std::string resolve_server_path(const std::string& user_path);

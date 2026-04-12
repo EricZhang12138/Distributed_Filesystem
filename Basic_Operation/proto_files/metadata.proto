@@ -1,0 +1,70 @@
+syntax = "proto3";
+package metadata;
+
+import "afs_operation.proto";
+
+// === Metadata-specific messages ===
+
+message MetadataInitRequest {
+    string client_id = 1;
+}
+
+message MetadataInitResponse {
+    string root_path = 1;
+    string data_server_address = 2;
+}
+
+message LookupRequest {
+    string path = 1;
+}
+
+message LookupResponse {
+    string data_server_address = 1;
+}
+
+message RegisterRequest {
+    string address = 1;
+    string root_dir = 2;
+}
+
+message RegisterResponse {
+    bool success = 1;
+}
+
+message HeartbeatRequest {
+    string address = 1;
+}
+
+message HeartbeatResponse {
+    bool success = 1;
+}
+
+service MetadataService {
+    // Client initialization — returns root path + data server address
+    rpc Init (MetadataInitRequest) returns (MetadataInitResponse);
+
+    // File lookup — returns which data server holds a file
+    rpc Lookup (LookupRequest) returns (LookupResponse);
+
+    // Data server registration and heartbeat
+    rpc RegisterDataServer (RegisterRequest) returns (RegisterResponse);
+    rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+
+    // Structural RPCs — forwarded to data server
+    rpc ls          (afs_operation.ListDirectoryRequest)  returns (afs_operation.ListDirectoryResponse);
+    rpc getattr     (afs_operation.GetAttrRequest)        returns (afs_operation.GetAttrResponse);
+    rpc mkdir       (afs_operation.MakeDir_request)       returns (afs_operation.MakeDir_response);
+    rpc unlink      (afs_operation.Delete_request)        returns (afs_operation.Delete_response);
+    rpc rmdir       (afs_operation.Rmdir_request)         returns (afs_operation.Rmdir_response);
+    rpc rename      (afs_operation.RenameRequest)         returns (afs_operation.RenameResponse);
+    rpc chmod       (afs_operation.Chmod_request)         returns (afs_operation.Chmod_response);
+    rpc chown       (afs_operation.Chown_request)         returns (afs_operation.Chown_response);
+    rpc utimens     (afs_operation.Utimens_request)       returns (afs_operation.Utimens_response);
+    rpc symlink     (afs_operation.Symlink_request)       returns (afs_operation.Symlink_response);
+    rpc readlink    (afs_operation.Readlink_request)      returns (afs_operation.Readlink_response);
+    rpc statfs      (afs_operation.Statfs_request)        returns (afs_operation.Statfs_response);
+    rpc setxattr    (afs_operation.SetXattr_request)      returns (afs_operation.SetXattr_response);
+    rpc getxattr    (afs_operation.GetXattr_request)      returns (afs_operation.GetXattr_response);
+    rpc listxattr   (afs_operation.ListXattr_request)     returns (afs_operation.ListXattr_response);
+    rpc removexattr (afs_operation.RemoveXattr_request)   returns (afs_operation.RemoveXattr_response);
+}

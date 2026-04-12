@@ -15,34 +15,65 @@
 
 
  
-FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> channel, std::string cache_path) : stub_(afs_operation::operators::NewStub(channel)), cache_directory(cache_path){
+afs_operation::operators::Stub* FileSystemClient::get_data_stub(const std::string& address) {
+    std::lock_guard<std::mutex> lock(stubs_mutex_);
+    auto it = data_stubs_.find(address);
+    if (it != data_stubs_.end()) {
+        return it->second.get();
+    }
+    // Create a new stub for this data server
+    auto channel = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
+    auto stub = afs_operation::operators::NewStub(channel);
+    auto* raw = stub.get();
+    data_stubs_[address] = std::move(stub);
+    return raw;
+}
+
+FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> metadata_channel, std::string cache_path) : metadata_stub_(metadata::MetadataService::NewStub(metadata_channel)), cache_directory(cache_path){
     // Generate a universally unique identifier for client ID
     boost::uuids::random_generator gen;
     boost::uuids::uuid id = gen();
     client_id = boost::uuids::to_string(id); // convert to string
     std::cout << "Client ID: " << client_id << std::endl;
 
-    afs_operation::InitialiseRequest request;
-    request.set_code_to_initialise("I want input/output directory");
-    request.set_client_id(client_id);
-    afs_operation::InitialiseResponse response;
-    grpc::ClientContext context;
-    grpc::Status status = stub_ -> request_dir(&context, request, &response);
+    // Call metadata server Init to get root path and data server address
+    metadata::MetadataInitRequest meta_request;
+    meta_request.set_client_id(client_id);
+    metadata::MetadataInitResponse meta_response;
+    grpc::ClientContext meta_context;
+    grpc::Status status = metadata_stub_->Init(&meta_context, meta_request, &meta_response);
 
     if (!status.ok()){
-        std::cerr << "Unable to retrieve the path for input/output files on the server" << std::endl;
-        this->server_root_path_ ="/"; // default when it fails
-    }else{
-        // Store the root path instead of just printing it
-        this->server_root_path_ = response.root_path(); 
-        std::cerr << "Client initialized. Server root directory: " << this->server_root_path_ << std::endl; 
+        std::cerr << "FATAL: Unable to connect to metadata server: " << status.error_message() << std::endl;
+        throw std::runtime_error("Failed to initialize: metadata server unreachable");
+    }
+
+    this->server_root_path_ = meta_response.root_path();
+    this->data_server_address_ = meta_response.data_server_address();
+    std::cerr << "Client initialized via metadata server. Root: " << this->server_root_path_
+              << " Data server: " << this->data_server_address_ << std::endl;
+
+    // Create the data server stub (used for content ops and subscribe)
+    auto data_channel = grpc::CreateChannel(data_server_address_, grpc::InsecureChannelCredentials());
+    stub_ = afs_operation::operators::NewStub(data_channel);
+
+    // Register this client with the data server via request_dir
+    // (data server uses this to track connected clients for notifications)
+    {
+        afs_operation::InitialiseRequest ds_request;
+        ds_request.set_code_to_initialise("I want input/output directory");
+        ds_request.set_client_id(client_id);
+        afs_operation::InitialiseResponse ds_response;
+        grpc::ClientContext ds_context;
+        grpc::Status ds_status = stub_->request_dir(&ds_context, ds_request, &ds_response);
+        if (!ds_status.ok()) {
+            std::cerr << "Warning: Failed to register with data server: " << ds_status.error_message() << std::endl;
+        }
     }
 
     subscriber_context_ = std::make_unique<grpc::ClientContext>();
 
-    // set up the subscribe channel to the server
-    // non static member function needs the object to call it on. So we need this
-    // also we pass the pointer to the member function to the thread
+    // set up the subscribe channel to the data server directly
     subscriber_thread = std::thread(&FileSystemClient::RunSubscriber, this);
 }
 
@@ -96,7 +127,7 @@ std::optional<FileAttributes> FileSystemClient::get_attributes(const std::string
     afs_operation::GetAttrResponse response;
     grpc::ClientContext context;
 
-    grpc::Status status = stub_->getattr(&context, request, &response);
+    grpc::Status status = metadata_stub_->getattr(&context, request, &response);
 
     if (!status.ok()) {
         // Don't log an error here if it's just "NOT_FOUND",
@@ -185,7 +216,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             
             if (status.ok()) {
                 // Only add to cache on success
-                struct FileInfo file_info{false, last_timestamp, filename};
+                struct FileInfo file_info{false, last_timestamp, filename, data_server_address_};
                 cache_mutex.lock();
                 cache[file_location] = file_info;
                 cache_mutex.unlock();
@@ -554,7 +585,7 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     }
     outfile.close();
 
-    struct FileInfo file_info{true, 0, filename};
+    struct FileInfo file_info{true, 0, filename, data_server_address_};
     cache_mutex.lock();
     cache[file_location] = file_info;
     cache_mutex.unlock();
@@ -777,7 +808,7 @@ std::optional<std::map<std::string, std::string>> FileSystemClient::ls_contents(
     std::cout << "DEBUG: Listing contents for resolved path: " << resolved_path << std::endl;
     request.set_directory(resolved_path); // Use resolved_path
 
-    grpc::Status status = stub_ -> ls(&context, request, &response);
+    grpc::Status status = metadata_stub_->ls(&context, request, &response);
     if (!status.ok()){
         std::cerr << "Failed to load the directory content from the server: " << status.error_message() << std::endl;
         return std::nullopt;
@@ -906,7 +937,7 @@ bool FileSystemClient::rename_file(const std::string& from_name, const std::stri
     request.set_new_directory(resolved_path_new);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_ -> rename(&context, request, &response);
+    grpc::Status status = metadata_stub_->rename(&context, request, &response);
 
     if (!status.ok()) {
         if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
@@ -987,7 +1018,7 @@ bool FileSystemClient::make_directory(const std::string& directory, const uint32
     request.set_directory(resolved_path);
     request.set_mode(mode);
     
-    grpc::Status status = stub_ -> mkdir(&context, request, &response);
+    grpc::Status status = metadata_stub_->mkdir(&context, request, &response);
     if (!status.ok()){
         std::cout << "Directory Creation Failed: " << status.error_message() << std::endl;
         return false;
@@ -1040,7 +1071,7 @@ bool FileSystemClient::delete_file(const std::string& directory){
     afs_operation::Delete_response response;
     request.set_directory(resolved_path);
     request.set_client_id(client_id);
-    grpc::Status status = stub_ -> unlink(&context, request, &response);
+    grpc::Status status = metadata_stub_->unlink(&context, request, &response);
     if (!status.ok()){
         std::cout << "Directory Deletion Failed: " << status.error_message() << std::endl;
         return false;
@@ -1093,7 +1124,7 @@ int FileSystemClient::delete_directory(const std::string& directory){
     request.set_directory(resolved_path);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->rmdir(&context, request, &response);
+    grpc::Status status = metadata_stub_->rmdir(&context, request, &response);
     if (!status.ok()) {
         switch (status.error_code()) {
             case grpc::StatusCode::FAILED_PRECONDITION: return -ENOTEMPTY;
@@ -1121,7 +1152,7 @@ bool FileSystemClient::change_mode(const std::string& filename, const std::strin
     request.set_mode(mode);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->chmod(&context, request, &response);
+    grpc::Status status = metadata_stub_->chmod(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server chmod failed: " << status.error_message() << std::endl;
         return false;
@@ -1155,7 +1186,7 @@ bool FileSystemClient::change_owner(const std::string& filename, const std::stri
     request.set_gid(gid);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->chown(&context, request, &response);
+    grpc::Status status = metadata_stub_->chown(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server chown failed: " << status.error_message() << std::endl;
         return false;
@@ -1185,7 +1216,7 @@ bool FileSystemClient::set_times(const std::string& filename, const std::string&
     request.set_mtime(mtime_ns);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->utimens(&context, request, &response);
+    grpc::Status status = metadata_stub_->utimens(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server utimens failed: " << status.error_message() << std::endl;
         return false;
@@ -1215,7 +1246,7 @@ bool FileSystemClient::create_symlink(const std::string& target, const std::stri
     request.set_linkpath_name(linkpath_name);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->symlink(&context, request, &response);
+    grpc::Status status = metadata_stub_->symlink(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server symlink failed: " << status.error_message() << std::endl;
         return false;
@@ -1235,7 +1266,7 @@ bool FileSystemClient::read_symlink(const std::string& filename, const std::stri
     request.set_directory(resolved_path);
     request.set_filename(filename);
 
-    grpc::Status status = stub_->readlink(&context, request, &response);
+    grpc::Status status = metadata_stub_->readlink(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server readlink failed: " << status.error_message() << std::endl;
         return false;
@@ -1363,7 +1394,7 @@ bool FileSystemClient::get_filesystem_stats(struct statvfs& out){
     afs_operation::Statfs_request request;
     afs_operation::Statfs_response response;
 
-    grpc::Status status = stub_->statfs(&context, request, &response);
+    grpc::Status status = metadata_stub_->statfs(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server statfs failed: " << status.error_message() << std::endl;
         return false;
@@ -1394,7 +1425,7 @@ bool FileSystemClient::set_xattr(const std::string& filename, const std::string&
     request.set_flags(flags);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->setxattr(&context, request, &response);
+    grpc::Status status = metadata_stub_->setxattr(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server setxattr failed: " << status.error_message() << std::endl;
         return false;
@@ -1412,7 +1443,7 @@ int FileSystemClient::get_xattr(const std::string& filename, const std::string& 
     request.set_filename(filename);
     request.set_name(name);
 
-    grpc::Status status = stub_->getxattr(&context, request, &response);
+    grpc::Status status = metadata_stub_->getxattr(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server getxattr failed: " << status.error_message() << std::endl;
         return -1;
@@ -1431,7 +1462,7 @@ bool FileSystemClient::list_xattr(const std::string& filename, const std::string
     request.set_directory(resolved_path);
     request.set_filename(filename);
 
-    grpc::Status status = stub_->listxattr(&context, request, &response);
+    grpc::Status status = metadata_stub_->listxattr(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server listxattr failed: " << status.error_message() << std::endl;
         return false;
@@ -1454,7 +1485,7 @@ bool FileSystemClient::remove_xattr(const std::string& filename, const std::stri
     request.set_name(name);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->removexattr(&context, request, &response);
+    grpc::Status status = metadata_stub_->removexattr(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server removexattr failed: " << status.error_message() << std::endl;
         return false;

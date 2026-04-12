@@ -9,26 +9,26 @@ Transform the current single-server AFS into a distributed system with a **metad
 ## Architecture
 
 ```
-                          ┌──────────────────┐
+                          ┌──────────────────-┐
                           │  Metadata Server  │
-                          │  (directory tree,  │
-                          │   file→server map, │
-                          │   notifications)   │
+                          │  (directory tree, │
+                          │   file→server map,│
+                          │   notifications)  │
                           └────┬────┬────┬────┘
                  gRPC stubs    │    │    │   heartbeats
               ┌────────────────┘    │    └────────────────┐
               ▼                     ▼                     ▼
         ┌───────────┐        ┌───────────┐        ┌───────────┐
-        │ Data Srv A │        │ Data Srv B │        │ Data Srv C │
-        │ (blob I/O) │        │ (blob I/O) │        │ (blob I/O) │
+        │ Data Srv A│        │ Data Srv B│        │ Data Srv C│
+        │ (blob I/O)│        │ (blob I/O)│        │ (blob I/O)│
         └───────────┘        └───────────┘        └───────────┘
-              ▲                     ▲                     ▲
-              │         gRPC (content ops)                │
+              ▲                     ▲                    ▲
+              │         gRPC (content ops)               │
               └──────────────┬───────────────────────────┘
                              │
                         ┌─────────┐
-                        │  Client  │── gRPC (metadata ops) ──▶ Metadata Server
-                        │  + FUSE  │
+                        │  Client │── gRPC (metadata ops) ──▶ Metadata Server
+                        │  + FUSE │
                         └─────────┘
 ```
 
