@@ -87,8 +87,9 @@ std::optional<FileAttributes> FileSystemClient::get_attributes(const std::string
     cache_mutex.lock();
     auto it = cached_attr.find(file_loca_server);
     if (it != cached_attr.end()){   // this means file_loca_server exists in the cached_attr already
+        FileAttributes result = it->second; // copy under lock before another thread invalidates the iterator
         cache_mutex.unlock();
-        return it -> second;
+        return result;
     }
     cache_mutex.unlock();
 

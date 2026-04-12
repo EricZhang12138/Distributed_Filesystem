@@ -99,7 +99,10 @@ static int afs_release(const char *path, struct fuse_file_info *fi) {
     std::string filename = fs_path.filename().string();
     if (dir.empty() || dir == "/") dir = "";
 
-    get_client()->close_file(filename, dir);
+    if (!get_client()->close_file(filename, dir)) {
+        std::cerr << "FUSE: afs_release failed for " << filename << std::endl;
+        return -EIO;
+    }
     std::cout << "FUSE: afs_release is called on "<< filename <<std::endl;
     return 0;
 }
