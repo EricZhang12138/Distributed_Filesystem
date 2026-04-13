@@ -16,6 +16,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include "metadata.grpc.pb.h"
+#include "metadata.pb.h"
 
 // helper class used for managing the callback system
 struct NotificationQueue{
@@ -51,9 +53,17 @@ struct NotificationQueue{
 // main filesystem server class 
 class FileSystem final : public afs_operation::operators::Service{
 
-public: 
+public:
     std::string root_dir;           // "/Users/ericzhang/Documents/Filesystems/Filesystem_server";
     int starting_length;
+    int listen_port_ = 50051;       // Configurable listen port
+    // Metadata server stub — used to call NotifyFileChange after mutations
+    std::shared_ptr<metadata::MetadataService::Stub> metadata_stub_;
+    void set_metadata_stub(std::shared_ptr<metadata::MetadataService::Stub> stub) { metadata_stub_ = stub; }
+    // Helper: notify metadata server of a file change
+    void notify_metadata(const std::string& path, const std::string& message,
+                         const std::string& client_id, int64_t timestamp,
+                         int64_t new_size = -1, const std::string& new_path = "");
     std::mutex file_map_mutex;
     std::mutex file_map_open_mutex;
     // this file_map is basically recording the list of clients that have the specific file in cache
@@ -62,6 +72,8 @@ public:
     // this is different from file_map because we don't clean up in close() in file_map 
     std::unordered_map<std::string, std::unordered_set<std::string>> file_map_open;
     void RunServer();
+    // Start the gRPC server without blocking — returns the server object
+    std::unique_ptr<grpc::Server> StartServer();
     FileSystem(std::string root_dir);
     
     std::mutex subscriber_mutex;

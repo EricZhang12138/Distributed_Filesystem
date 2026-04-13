@@ -28,6 +28,7 @@ private:
         int64_t timestamp;    // The last known timestamp from the server
         std::string filename; // The base name of the file
         std::string server_address; // Which data server holds this file (for Phase 2)
+        std::string server_root;    // The data server's root directory (for building data-server-local paths)
     };
     struct FileStreams {
         // shared_ptr (not unique_ptr) so close_file / fsync_file / read_file / write_file
@@ -37,12 +38,8 @@ private:
         std::shared_ptr<std::ifstream> read_stream;
         std::shared_ptr<std::ofstream> write_stream;
     };
-    // Metadata server stub (structural ops: ls, getattr, mkdir, etc.)
+    // Metadata server stub (structural ops + subscribe + Lookup/CreateFile)
     std::unique_ptr<metadata::MetadataService::Stub> metadata_stub_;
-    // Data server stub — direct connection for content ops (open, close, flush, truncate, subscribe)
-    std::unique_ptr<afs_operation::operators::Stub> stub_;
-    // Data server address (populated from metadata Init response)
-    std::string data_server_address_;
     // Map of data server address -> stub (for Phase 2 multi-server support)
     std::unordered_map<std::string, std::shared_ptr<afs_operation::operators::Stub>> data_stubs_;
     std::mutex stubs_mutex_;

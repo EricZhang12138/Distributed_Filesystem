@@ -11,7 +11,7 @@ message MetadataInitRequest {
 
 message MetadataInitResponse {
     string root_path = 1;
-    string data_server_address = 2;
+    // data_server_address removed in Phase 2 — clients discover servers per-file via Lookup/CreateFile
 }
 
 message LookupRequest {
@@ -20,6 +20,7 @@ message LookupRequest {
 
 message LookupResponse {
     string data_server_address = 1;
+    string data_server_root = 2;   // The data server's root directory (so client can build full paths)
 }
 
 message RegisterRequest {
@@ -39,18 +40,66 @@ message HeartbeatResponse {
     bool success = 1;
 }
 
+// === Phase 2: New messages ===
+
+message CreateFileRequest {
+    string path = 1;        // Full path e.g. "/subdir/file.txt"
+    uint32 mode = 2;
+    string client_id = 3;
+}
+
+message CreateFileResponse {
+    string data_server_address = 1;
+    bool success = 2;
+    string data_server_root = 3;   // The data server's root directory
+}
+
+message NotifyFileChangeRequest {
+    string path = 1;         // Full server-side path of the file
+    string message = 2;      // "UPDATE", "DELETE", "RENAME"
+    int64 timestamp = 3;
+    string client_id = 4;    // Which client triggered this (to exclude from notification)
+    int64 new_size = 5;      // Updated file size after mutation
+    string new_path = 6;     // For rename: the new path
+}
+
+message NotifyFileChangeResponse {
+    bool success = 1;
+}
+
+message RegisterFileInterestRequest {
+    string path = 1;         // Server-side path the client is interested in
+    string client_id = 2;
+}
+
+message RegisterFileInterestResponse {
+    bool success = 1;
+}
+
 service MetadataService {
-    // Client initialization — returns root path + data server address
+    // Client initialization — returns root path
     rpc Init (MetadataInitRequest) returns (MetadataInitResponse);
 
     // File lookup — returns which data server holds a file
     rpc Lookup (LookupRequest) returns (LookupResponse);
 
+    // File creation — picks a data server, creates tree entry, returns address
+    rpc CreateFile (CreateFileRequest) returns (CreateFileResponse);
+
     // Data server registration and heartbeat
     rpc RegisterDataServer (RegisterRequest) returns (RegisterResponse);
     rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
 
-    // Structural RPCs — forwarded to data server
+    // Subscriber system — clients subscribe here for cache invalidation
+    rpc Subscribe (afs_operation.SubscribeRequest) returns (stream afs_operation.Notification);
+
+    // Data server -> metadata server: report file mutations
+    rpc NotifyFileChange (NotifyFileChangeRequest) returns (NotifyFileChangeResponse);
+
+    // Client -> metadata server: register interest in a file (for notifications)
+    rpc RegisterFileInterest (RegisterFileInterestRequest) returns (RegisterFileInterestResponse);
+
+    // Structural RPCs — handled locally by metadata server's namespace tree
     rpc ls          (afs_operation.ListDirectoryRequest)  returns (afs_operation.ListDirectoryResponse);
     rpc getattr     (afs_operation.GetAttrRequest)        returns (afs_operation.GetAttrResponse);
     rpc mkdir       (afs_operation.MakeDir_request)       returns (afs_operation.MakeDir_response);

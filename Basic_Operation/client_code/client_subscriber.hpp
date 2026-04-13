@@ -8,8 +8,9 @@ void FileSystemClient::RunSubscriber() {
     afs_operation::SubscribeRequest request;
     request.set_client_id(client_id);
 
+    // Phase 2: Subscribe to metadata server instead of data server
     std::unique_ptr<grpc::ClientReader<afs_operation::Notification>> reader(
-        stub_->subscribe(subscriber_context_.get(), request));
+        metadata_stub_->Subscribe(subscriber_context_.get(), request));
 
     if (!reader) {
         std::cerr << "ERROR: Failed to create subscription reader" << std::endl;
@@ -42,7 +43,7 @@ void FileSystemClient::RunSubscriber() {
         }else{ // not in cache
             std::cout << "Inconsistent State: File: " << path_on_client << " is registered but not in cache"<< std::endl;
             cache_mutex.unlock();
-            continue; 
+            continue;
         }
         auto its = cached_attr.find(path_on_server);
         if (its != cached_attr.end()){
@@ -50,17 +51,16 @@ void FileSystemClient::RunSubscriber() {
         }else{
             std::cout << "Inconsistent State: File: " << path_on_server << " is registered but not in cache"<< std::endl;
             cache_mutex.unlock();
-            continue; 
+            continue;
         }
         cache_mutex.unlock();
     }
 
     grpc::Status status = reader->Finish();
     if (!status.ok()) {
-        std::cerr << "Subscriber stream failed: " << status.error_code() 
+        std::cerr << "Subscriber stream failed: " << status.error_code()
             << " - " << status.error_message() << std::endl;
     }
 }
 
 #endif
-

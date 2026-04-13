@@ -1,0 +1,543 @@
+<mxfile host="65bd71144e">
+    <diagram name="1. System Overview" id="page1">
+        <mxGraphModel dx="2533" dy="1478" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="780" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p1_title" value="AFS Distributed Filesystem &amp;mdash; System Overview" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="230" y="-100" width="650" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_clabel" value="Clients" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=3;fontColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="-50" y="95" width="120" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_c1" value="&lt;b&gt;Client 1&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;FUSE mount + local cache&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;arcSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="-100" y="120" width="210" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_c2" value="&lt;b&gt;Client 2&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;FUSE mount + local cache&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;arcSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="-100" y="390" width="210" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_ms" value="&lt;b&gt;Metadata Server&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontStyle=0;verticalAlign=top;container=1;collapsible=0;arcSize=6;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="80" width="480" height="420" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_grpc" value="&lt;b&gt;gRPC Service Layer&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=11;" parent="p1_ms" vertex="1">
+                    <mxGeometry x="15" y="35" width="450" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_tree" value="&lt;b&gt;Namespace Tree&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;root_node_ (MetaNode)&lt;br&gt;In-memory directory tree&lt;br&gt;Stores: name, attrs, children, data_server_address&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=top;" parent="p1_ms" vertex="1">
+                    <mxGeometry x="15" y="85" width="215" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_reg" value="&lt;b&gt;Server Registry&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;data_servers_ (vector)&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size:9px&quot;&gt;&lt;span style=&quot;color: rgb(63, 63, 63);&quot;&gt;Each entry: address, root_dir,&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;color: rgb(63, 63, 63);&quot;&gt;stub, heartbeat, alive&lt;/span&gt;&lt;br&gt;Round-robin: next_server_idx_&lt;br&gt;&lt;br&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=top;" parent="p1_ms" vertex="1">
+                    <mxGeometry x="240" y="85" width="215" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_sub" value="&lt;b&gt;Subscriber System&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;subscribers_ map&lt;br&gt;client_id &amp;rarr; NotificationQueue&lt;br&gt;Streaming RPC per client&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=top;" parent="p1_ms" vertex="1">
+                    <mxGeometry x="15" y="250" width="215" height="85" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_cfm" value="&lt;b&gt;Client-File Map&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;client_file_map_&lt;br&gt;path → set&amp;lt;client_id&amp;gt;&lt;br&gt;&lt;u&gt;Tracks who cares about what&lt;/u&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=top;" parent="p1_ms" vertex="1">
+                    <mxGeometry x="240" y="250" width="215" height="85" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_locks" value="&lt;font style=&#39;font-size:9px;color:#999&#39;&gt;Locks: tree_mutex_ | ds_mutex_ | subscriber_mutex_ | clients_mutex_&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" parent="p1_ms" vertex="1">
+                    <mxGeometry x="15" y="370" width="450" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_dslabel" value="Data Servers" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=13;fontStyle=3;fontColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="1030" y="60" width="130" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_dsa" value="&lt;b&gt;Data Server A&lt;/b&gt; (:50052)&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;root: /path/to/server_a&lt;br&gt;Blob store (file I/O only)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;arcSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="1010" y="100" width="230" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_dsb" value="&lt;b&gt;Data Server B&lt;/b&gt; (:50053)&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;gt;root: /path/to/server_b&lt;br&gt;Blob store (file I/O only)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;arcSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="1010" y="400" width="230" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_e1" value="&lt;font style=&quot;font-size:10px&quot;&gt;&lt;b&gt;Structural RPCs&lt;/b&gt;&lt;br&gt;(ls, getattr, Lookup, CreateFile...)&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;html=1;strokeColor=#333333;strokeWidth=2;fontSize=10;exitX=1;exitY=0.35;entryX=-0.008;entryY=0.158;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="p1_c1" target="p1_ms" edge="1">
+                    <mxGeometry x="-0.1728" y="21" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p1_e2" value="&lt;font style=&quot;font-size:10px&quot;&gt;&lt;b&gt;Structural RPCs&lt;/b&gt;&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;html=1;strokeColor=#333333;strokeWidth=2;fontSize=10;exitX=1;exitY=0.65;" parent="1" source="p1_c2" edge="1">
+                    <mxGeometry x="-0.0506" y="-21" relative="1" as="geometry">
+                        <mxPoint x="340" y="440" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="110" y="440"/>
+                        </Array>
+                        <mxPoint x="-1" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p1_e3" value="&lt;font color=&#39;#6c8ebf&#39; style=&#39;font-size:10px&#39;&gt;&lt;b&gt;Content RPCs (DIRECT)&lt;/b&gt;&lt;br&gt;open / read / write / close&lt;/font&gt;" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;curved=1;" parent="1" edge="1">
+                    <mxGeometry x="-0.0416" y="-25" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="610" y="-30"/>
+                        </Array>
+                        <mxPoint x="100" y="110" as="sourcePoint"/>
+                        <mxPoint x="1010" y="90" as="targetPoint"/>
+                        <mxPoint x="-1" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p1_e4" value="&lt;font color=&#39;#6c8ebf&#39; style=&#39;font-size:10px&#39;&gt;&lt;b&gt;Content RPCs (DIRECT)&lt;/b&gt;&lt;br&gt;open / read / write / close&lt;/font&gt;" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;curved=1;entryX=0;entryY=0.5;" parent="1" edge="1">
+                    <mxGeometry x="0.1536" y="66" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="590" y="680"/>
+                        </Array>
+                        <mxPoint x="110" y="470" as="sourcePoint"/>
+                        <mxPoint x="1000" y="460" as="targetPoint"/>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p1_e5" value="&lt;font color=&#39;#d6a200&#39; style=&#39;font-size:10px&#39;&gt;RegisterDataServer&lt;br&gt;NotifyFileChange&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;exitX=0;exitY=0.5;entryX=1;entryY=0.15;" parent="1" source="p1_dsa" target="p1_ms" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_e6" value="&lt;font color=&#39;#d6a200&#39; style=&#39;font-size:10px&#39;&gt;RegisterDataServer&lt;br&gt;NotifyFileChange&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;exitX=0;exitY=0.5;entryX=1;entryY=0.85;" parent="1" source="p1_dsb" target="p1_ms" edge="1">
+                    <mxGeometry x="0.1707" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p1_e7" value="&lt;font color=&#39;#82b366&#39; style=&#39;font-size:10px&#39;&gt;Subscribe stream&lt;br&gt;(notifications)&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;dashed=1;exitX=0;exitY=0.35;entryX=1;entryY=0.7;" parent="1" source="p1_ms" target="p1_c1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_e8" value="&lt;font color=&#39;#82b366&#39; style=&#39;font-size:10px&#39;&gt;Subscribe stream&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;dashed=1;exitX=0;exitY=0.65;entryX=1;entryY=0.3;" parent="1" source="p1_ms" target="p1_c2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1_note" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;Key Principle:&lt;/b&gt; No operation requires two network hops.&lt;br&gt;Structural ops = 1 hop to metadata server.  Content ops = 1 hop to data server (after initial Lookup).&lt;br&gt;Clients discover which data server holds a file via &lt;b&gt;Lookup&lt;/b&gt; (existing file) or &lt;b&gt;CreateFile&lt;/b&gt; (new file).&lt;/font&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="630" width="900" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="Q4ZEOfBSPspY-6gdt9Mn-4" value="" style="endArrow=classic;html=1;exitX=1.001;exitY=0.601;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.174;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;fillColor=#5E2DFF;strokeColor=default;" edge="1" parent="1" source="p1_ms" target="p1_dsb">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="840" y="310" as="sourcePoint"/>
+                        <mxPoint x="1010" y="380" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="1010" y="332"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="FSdAheitUQDZz8qpZu1R-1" value="updates to the data servers&amp;nbsp;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+                    <mxGeometry x="850" y="308" width="170" height="30" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="2. Namespace Tree" id="page2">
+        <mxGraphModel dx="1048" dy="593" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="750" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p2_title" value="Namespace Tree &amp;mdash; In-Memory MetaNode Hierarchy" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="10" width="700" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_subtitle" value="&lt;font style=&#39;font-size:10px;color:#888&#39;&gt;Each node is a MetaNode struct with: name, is_directory, attrs (size/mode/mtime...), data_server_address, children map&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="42" width="700" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_root" value="&lt;b&gt;/ (root)&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;is_directory: true&lt;br&gt;mode: drwxr-xr-x&lt;br&gt;nlink: 2&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#333333;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="460" y="80" width="160" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_eric" value="&lt;b&gt;Eric/&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;directory&lt;br&gt;mode: drwxr-xr-x&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="230" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_cotton" value="&lt;b&gt;Cotton/&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;directory&lt;br&gt;mode: drwxr-xr-x&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="230" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_file1" value="&lt;b&gt;file1.txt&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;ds: &lt;b&gt;localhost:50052&lt;/b&gt;&lt;br&gt;size: 1024&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="370" y="230" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_file2" value="&lt;b&gt;file2.txt&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;ds: &lt;b&gt;localhost:50053&lt;/b&gt;&lt;br&gt;size: 512&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="550" y="230" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_hi" value="&lt;b&gt;Hi/&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;directory&lt;br&gt;mode: drwxr-xr-x&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="730" y="230" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_link" value="&lt;b&gt;shortcut&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;symlink&lt;br&gt;&amp;rarr; /Eric/doc.txt&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="900" y="230" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_doc" value="&lt;b&gt;doc.txt&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;ds: &lt;b&gt;localhost:50052&lt;/b&gt;&lt;br&gt;size: 2048&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry y="380" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_notes" value="&lt;b&gt;notes.txt&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;ds: &lt;b&gt;localhost:50053&lt;/b&gt;&lt;br&gt;size: 300&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="150" y="380" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_hello" value="&lt;b&gt;hello.txt&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;ds: &lt;b&gt;localhost:50052&lt;/b&gt;&lt;br&gt;size: 64&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="730" y="380" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e1" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_root" target="p2_eric" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e2" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_root" target="p2_cotton" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e3" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_root" target="p2_file1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e4" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_root" target="p2_file2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e5" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_root" target="p2_hi" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e6" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_root" target="p2_link" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e7" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.3;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_eric" target="p2_doc" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e8" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.7;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_eric" target="p2_notes" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_e9" style="rounded=1;orthogonalLoop=1;html=1;strokeColor=#666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;" parent="1" source="p2_hi" target="p2_hello" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg_title" value="&lt;b&gt;Legend&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="490" width="60" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="520" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg1t" value="Directory (no data server)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="517" width="170" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="545" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg2t" value="File on Data Server A (:50052)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="542" width="190" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="570" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg3t" value="File on Data Server B (:50053)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="567" width="190" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="595" width="20" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_leg4t" value="Symlink" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="592" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_struct" value="&lt;b&gt;struct MetaNode&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px;font-family:monospace&#39;&gt;string name&lt;br&gt;bool is_directory&lt;br&gt;FileAttributes attrs&lt;br&gt;&amp;nbsp;&amp;nbsp;(size, mode, mtime, atime,&lt;br&gt;&amp;nbsp;&amp;nbsp; ctime, nlink, uid, gid)&lt;br&gt;string data_server_address&lt;br&gt;string symlink_target&lt;br&gt;map&amp;lt;string, MetaNode*&amp;gt; children&lt;/font&gt;" style="shape=note;whiteSpace=wrap;html=1;size=18;fillColor=#fff;strokeColor=#999;fontSize=11;align=left;spacingLeft=8;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="490" width="240" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2_resolve" value="&lt;b&gt;resolve_node(&amp;quot;/Eric/doc.txt&amp;quot;)&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px;font-family:monospace&#39;&gt;1. split_path &amp;rarr; [&amp;quot;Eric&amp;quot;, &amp;quot;doc.txt&amp;quot;]&lt;br&gt;2. node = root_node_&lt;br&gt;3. node = node-&amp;gt;children[&amp;quot;Eric&amp;quot;]&lt;br&gt;4. node = node-&amp;gt;children[&amp;quot;doc.txt&amp;quot;]&lt;br&gt;5. return node&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;(ds: localhost:50052, size: 2048)&lt;/font&gt;" style="shape=note;whiteSpace=wrap;html=1;size=18;fillColor=#f0fff0;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=8;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="490" width="290" height="150" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="3. RPC Classification" id="page3">
+        <mxGraphModel dx="1164" dy="659" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="800" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p3_title" value="RPC Classification &amp;mdash; How Each Call Is Handled" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="10" width="600" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat1" value="&lt;b&gt;TREE ONLY&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px;color:#666&#39;&gt;Answered entirely from the&lt;br&gt;in-memory namespace tree.&lt;br&gt;No data server contact.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;container=1;collapsible=0;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="70" width="250" height="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_ls" value="&lt;b&gt;ls&lt;/b&gt; &amp;mdash; iterate node-&amp;gt;children" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat1" vertex="1">
+                    <mxGeometry x="10" y="80" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_getattr" value="&lt;b&gt;getattr&lt;/b&gt; &amp;mdash; return node-&amp;gt;attrs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat1" vertex="1">
+                    <mxGeometry x="10" y="120" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_readlink" value="&lt;b&gt;readlink&lt;/b&gt; &amp;mdash; return node-&amp;gt;symlink_target" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat1" vertex="1">
+                    <mxGeometry x="10" y="160" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat1_hop" value="&lt;font style=&#39;font-size:10px;color:#82b366&#39;&gt;&lt;b&gt;1 hop: Client &amp;rarr; Metadata&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" parent="p3_cat1" vertex="1">
+                    <mxGeometry x="10" y="210" width="230" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat2" value="&lt;b&gt;TREE + FORWARD TO ALL DATA SERVERS&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px;color:#666&#39;&gt;Update tree, then forward to&lt;br&gt;every registered data server.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;verticalAlign=top;container=1;collapsible=0;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="70" width="250" height="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_mkdir" value="&lt;b&gt;mkdir&lt;/b&gt; &amp;mdash; add dir node, forward to all" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat2" vertex="1">
+                    <mxGeometry x="10" y="70" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_rmdir" value="&lt;b&gt;rmdir&lt;/b&gt; &amp;mdash; remove dir node, forward to all" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat2" vertex="1">
+                    <mxGeometry x="10" y="110" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_symlink" value="&lt;b&gt;symlink&lt;/b&gt; &amp;mdash; add link node, forward to all" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat2" vertex="1">
+                    <mxGeometry x="10" y="150" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_statfs" value="&lt;b&gt;statfs&lt;/b&gt; &amp;mdash; aggregate from all servers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat2" vertex="1">
+                    <mxGeometry x="10" y="190" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat3" value="&lt;b&gt;TREE + FORWARD TO OWNING SERVER&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px;color:#666&#39;&gt;Update tree attrs, then forward to&lt;br&gt;the data server that owns the file.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;verticalAlign=top;container=1;collapsible=0;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="70" width="250" height="310" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_unlink" value="&lt;b&gt;unlink&lt;/b&gt; &amp;mdash; remove node, forward to owner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat3" vertex="1">
+                    <mxGeometry x="10" y="70" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_rename" value="&lt;b&gt;rename&lt;/b&gt; &amp;mdash; move in tree, forward to owner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat3" vertex="1">
+                    <mxGeometry x="10" y="110" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_chmod" value="&lt;b&gt;chmod&lt;/b&gt; &amp;mdash; update mode, forward to owner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat3" vertex="1">
+                    <mxGeometry x="10" y="150" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_chown" value="&lt;b&gt;chown&lt;/b&gt; &amp;mdash; update uid/gid, forward" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat3" vertex="1">
+                    <mxGeometry x="10" y="190" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_utimens" value="&lt;b&gt;utimens&lt;/b&gt; &amp;mdash; update times, forward" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat3" vertex="1">
+                    <mxGeometry x="10" y="230" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_xattr" value="&lt;b&gt;set/get/list/removexattr&lt;/b&gt; &amp;mdash; forward" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat3" vertex="1">
+                    <mxGeometry x="10" y="270" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat4" value="&lt;b&gt;ROUTING&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px;color:#666&#39;&gt;Look up tree, return data server&lt;br&gt;address + root to client.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;verticalAlign=top;container=1;collapsible=0;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="70" width="250" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_lookup" value="&lt;b&gt;Lookup&lt;/b&gt; &amp;mdash; existing file &amp;rarr; ds_address" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat4" vertex="1">
+                    <mxGeometry x="10" y="70" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_create" value="&lt;b&gt;CreateFile&lt;/b&gt; &amp;mdash; pick server (round-robin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" parent="p3_cat4" vertex="1">
+                    <mxGeometry x="10" y="110" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat4_hop" value="&lt;font style=&#39;font-size:10px;color:#9673a6&#39;&gt;&lt;b&gt;1 hop: Client &amp;rarr; Metadata&lt;br&gt;Then client talks to DS directly&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" parent="p3_cat4" vertex="1">
+                    <mxGeometry x="10" y="150" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat5" value="&lt;b&gt;CONTENT (DIRECT TO DATA SERVER)&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px;color:#666&#39;&gt;Client talks directly to the data server.&lt;br&gt;Metadata server is NOT involved.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;verticalAlign=top;container=1;collapsible=0;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="290" width="250" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_open" value="&lt;b&gt;open&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#b85450;fontSize=10;" parent="p3_cat5" vertex="1">
+                    <mxGeometry x="10" y="70" width="105" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_read" value="&lt;b&gt;read&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#b85450;fontSize=10;" parent="p3_cat5" vertex="1">
+                    <mxGeometry x="125" y="70" width="105" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_write" value="&lt;b&gt;write&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#b85450;fontSize=10;" parent="p3_cat5" vertex="1">
+                    <mxGeometry x="10" y="110" width="105" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_close" value="&lt;b&gt;close (flush)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#b85450;fontSize=10;" parent="p3_cat5" vertex="1">
+                    <mxGeometry x="125" y="110" width="105" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_cat5_hop" value="&lt;font style=&#39;font-size:10px;color:#b85450&#39;&gt;&lt;b&gt;1 hop: Client &amp;rarr; Data Server&lt;br&gt;(after Lookup/CreateFile)&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" parent="p3_cat5" vertex="1">
+                    <mxGeometry x="10" y="150" width="230" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3_path" value="&lt;b&gt;Path Translation:&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px;font-family:monospace&#39;&gt;Virtual path: /Eric/doc.txt&lt;br&gt;to_ds_path(ds_root, virtual_path)&lt;br&gt;&amp;rarr; /Users/.../Filesystem_server/Eric/doc.txt&lt;/font&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff;strokeColor=#ccc;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="420" width="370" height="80" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="4. CreateFile Flow" id="page4">
+        <mxGraphModel dx="1048" dy="593" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="800" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p4_title" value="CreateFile + Round-Robin Placement Flow" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="10" width="600" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_h1" value="&lt;b&gt;Client&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="60" width="180" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_h2" value="&lt;b&gt;Metadata Server&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="60" width="180" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_h3" value="&lt;b&gt;Data Server A&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;(:50052)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="600" y="60" width="180" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_h4" value="&lt;b&gt;Data Server B&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;(:50053)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="60" width="180" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_l1" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="100" as="sourcePoint"/>
+                        <mxPoint x="130" y="760" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_l2" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="410" y="100" as="sourcePoint"/>
+                        <mxPoint x="410" y="760" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_l3" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="690" y="100" as="sourcePoint"/>
+                        <mxPoint x="690" y="760" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_l4" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="960" y="100" as="sourcePoint"/>
+                        <mxPoint x="960" y="760" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s1" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;1.&lt;/b&gt; CreateFile(&amp;quot;/file1.txt&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#333;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="140" y="130" as="sourcePoint"/>
+                        <mxPoint x="400" y="130" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s2" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;2.&lt;/b&gt; pick_next_server()&lt;br&gt;idx=0 &amp;rarr; DS_A&lt;br&gt;next_server_idx_ = 1&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="150" width="160" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_s3" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;3.&lt;/b&gt; Add MetaNode to tree&lt;br&gt;name=&amp;quot;file1.txt&amp;quot;, ds=DS_A&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="210" width="160" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_s4" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;4.&lt;/b&gt; {addr=DS_A, root=&amp;quot;/path/a&amp;quot;}&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#333;strokeWidth=2;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="400" y="265" as="sourcePoint"/>
+                        <mxPoint x="140" y="265" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s5" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;5.&lt;/b&gt; open(&amp;quot;file1.txt&amp;quot;, root+&amp;quot;/&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="140" y="300" as="sourcePoint"/>
+                        <mxPoint x="680" y="300" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s6" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;6.&lt;/b&gt; write(data) / close()&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="140" y="340" as="sourcePoint"/>
+                        <mxPoint x="680" y="340" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s7" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;7.&lt;/b&gt; NotifyFileChange(&amp;quot;/file1.txt&amp;quot;, UPDATE, size=1024)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#d6b656;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="680" y="380" as="sourcePoint"/>
+                        <mxPoint x="420" y="380" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s8" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;8.&lt;/b&gt; Update tree:&lt;br&gt;node.attrs.size = 1024&lt;br&gt;node.attrs.mtime = now&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="400" width="160" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_sep" value="" style="endArrow=none;html=1;strokeColor=#999;strokeWidth=1;dashed=1;dashPattern=8 4;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="30" y="470" as="sourcePoint"/>
+                        <mxPoint x="1060" y="470" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_sep_label" value="&lt;font style=&#39;font-size:10px;color:#999&#39;&gt;Second file &amp;mdash; lands on different server (round-robin)&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="455" width="400" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_s9" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;9.&lt;/b&gt; CreateFile(&amp;quot;/file2.txt&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#333;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="140" y="500" as="sourcePoint"/>
+                        <mxPoint x="400" y="500" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s10" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;10.&lt;/b&gt; pick_next_server()&lt;br&gt;idx=1 &amp;rarr; DS_B&lt;br&gt;next_server_idx_ = 0&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="520" width="160" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4_s11" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;11.&lt;/b&gt; {addr=DS_B, root=&amp;quot;/path/b&amp;quot;}&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#333;strokeWidth=2;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="400" y="590" as="sourcePoint"/>
+                        <mxPoint x="140" y="590" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s12" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;12.&lt;/b&gt; open(&amp;quot;file2.txt&amp;quot;, root+&amp;quot;/&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="140" y="630" as="sourcePoint"/>
+                        <mxPoint x="950" y="630" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_s13" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;13.&lt;/b&gt; write(data) / close()&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="140" y="670" as="sourcePoint"/>
+                        <mxPoint x="950" y="670" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4_result" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;Result:&lt;/b&gt; file1.txt on DS_A, file2.txt on DS_B&lt;br&gt;ls(&amp;quot;/&amp;quot;) returns both (merged from namespace tree)&lt;/font&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="710" width="380" height="45" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="5. Notification Flow" id="page5">
+        <mxGraphModel dx="1048" dy="593" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="700" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p5_title" value="Notification Flow &amp;mdash; Cache Invalidation" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="10" width="500" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_h1" value="&lt;b&gt;Client 1&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;(writer)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="60" width="150" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_h2" value="&lt;b&gt;Data Server&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="60" width="150" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_h3" value="&lt;b&gt;Metadata Server&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="550" y="60" width="170" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_h4" value="&lt;b&gt;Client 2&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;(has /file.txt cached)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="840" y="60" width="170" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_l1" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="115" y="105" as="sourcePoint"/>
+                        <mxPoint x="115" y="650" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_l2" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="105" as="sourcePoint"/>
+                        <mxPoint x="365" y="650" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_l3" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="635" y="105" as="sourcePoint"/>
+                        <mxPoint x="635" y="650" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_l4" style="endArrow=none;dashed=1;html=1;strokeColor=#ccc;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="925" y="105" as="sourcePoint"/>
+                        <mxPoint x="925" y="650" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_s0a" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;0.&lt;/b&gt; RegisterFileInterest(&amp;quot;/file.txt&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=9;endArrow=block;endFill=1;strokeColor=#999;strokeWidth=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="125" y="130" as="sourcePoint"/>
+                        <mxPoint x="625" y="130" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_s0b" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;0.&lt;/b&gt; RegisterFileInterest(&amp;quot;/file.txt&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=9;endArrow=block;endFill=1;strokeColor=#999;strokeWidth=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="915" y="155" as="sourcePoint"/>
+                        <mxPoint x="645" y="155" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_cfm" value="&lt;font style=&#39;font-size:9px&#39;&gt;client_file_map_[&amp;quot;/file.txt&amp;quot;]&lt;br&gt;= {client_1, client_2}&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="170" width="155" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_s1" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;1.&lt;/b&gt; open(&amp;quot;/file.txt&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="125" y="230" as="sourcePoint"/>
+                        <mxPoint x="355" y="230" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_s2" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;2.&lt;/b&gt; write(&amp;quot;new data&amp;quot;)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="125" y="270" as="sourcePoint"/>
+                        <mxPoint x="355" y="270" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_s3" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;3.&lt;/b&gt; close()&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="125" y="310" as="sourcePoint"/>
+                        <mxPoint x="355" y="310" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_s4" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;4.&lt;/b&gt; NotifyFileChange(&amp;quot;/file.txt&amp;quot;,&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;msg=&amp;quot;UPDATE&amp;quot;, client_id=client_1,&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;new_size=50)&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#d6b656;strokeWidth=2;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="375" y="360" as="sourcePoint"/>
+                        <mxPoint x="625" y="360" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_s5" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;5a.&lt;/b&gt; Update tree:&lt;br&gt;node.attrs.size = 50&lt;br&gt;node.attrs.mtime = now&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="395" width="155" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_s5b" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;5b.&lt;/b&gt; push_notification()&lt;br&gt;Skip client_1 (originator)&lt;br&gt;Push to client_2&#39;s queue&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="455" width="155" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_s6" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;6.&lt;/b&gt; Notification{&amp;quot;/file.txt&amp;quot;, &amp;quot;UPDATE&amp;quot;}&lt;br&gt;&lt;i&gt;(via Subscribe streaming RPC)&lt;/i&gt;&lt;/font&gt;" style="html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#82b366;strokeWidth=2;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="645" y="525" as="sourcePoint"/>
+                        <mxPoint x="915" y="525" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5_s7" value="&lt;font style=&#39;font-size:9px&#39;&gt;&lt;b&gt;7.&lt;/b&gt; Invalidate local cache&lt;br&gt;for /file.txt&lt;br&gt;(next open re-downloads)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="850" y="550" width="155" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5_note" value="&lt;font style=&#39;font-size:10px&#39;&gt;&lt;b&gt;Key:&lt;/b&gt; Client 1 (the writer) does NOT receive a notification for its own write.&lt;br&gt;The &lt;b&gt;client_id&lt;/b&gt; field in NotifyFileChange is used to exclude the originator.&lt;/font&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=10;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="620" width="500" height="45" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

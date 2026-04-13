@@ -294,3 +294,6 @@ To avoid a big-bang rewrite:
 3. **Phase 3:** Add multi-server support. Metadata server tracks file→server mapping. Client gets `Lookup` and stub map. `create` assigns files to servers.
 
 4. **Phase 4:** Add heartbeats and failure detection. Mark unavailable servers. Optionally add replication.
+
+
+

@@ -123,6 +123,7 @@ add_executable(afs_metadata_server
 target_include_directories(afs_metadata_server PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     Basic_Operation/metadata_server        # To find metadata_server.hpp
+    Basic_Operation/client_code            # To find file_attributes.hpp
     "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
 )
 
@@ -211,6 +212,28 @@ target_include_directories(ci_test_client_2 PRIVATE
 )
 
 target_link_libraries(ci_test_client_2
+    gRPC::grpc++
+    protobuf::libprotobuf
+    Boost::boost
+)
+
+# 9. Round-Robin Placement Test
+add_executable(round_robin_test
+    Basic_Operation/test/round_robin_test.cpp
+    Basic_Operation/client_code/filesystem_client.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+    ${META_PROTO_SRCS}
+    ${META_GRPC_SRCS}
+)
+
+target_include_directories(round_robin_test PRIVATE
+    Basic_Operation/client_code
+    ${CMAKE_CURRENT_BINARY_DIR}
+    "${CMAKE_CURRENT_BINARY_DIR}/Basic_Operation/proto_files"
+)
+
+target_link_libraries(round_robin_test
     gRPC::grpc++
     protobuf::libprotobuf
     Boost::boost

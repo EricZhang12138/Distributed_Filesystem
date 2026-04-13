@@ -36,7 +36,7 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> metadata_chann
     client_id = boost::uuids::to_string(id); // convert to string
     std::cout << "Client ID: " << client_id << std::endl;
 
-    // Call metadata server Init to get root path and data server address
+    // Call metadata server Init to get root path
     metadata::MetadataInitRequest meta_request;
     meta_request.set_client_id(client_id);
     metadata::MetadataInitResponse meta_response;
@@ -49,31 +49,13 @@ FileSystemClient::FileSystemClient(std::shared_ptr<grpc::Channel> metadata_chann
     }
 
     this->server_root_path_ = meta_response.root_path();
-    this->data_server_address_ = meta_response.data_server_address();
-    std::cerr << "Client initialized via metadata server. Root: " << this->server_root_path_
-              << " Data server: " << this->data_server_address_ << std::endl;
+    std::cerr << "Client initialized via metadata server. Root: " << this->server_root_path_ << std::endl;
 
-    // Create the data server stub (used for content ops and subscribe)
-    auto data_channel = grpc::CreateChannel(data_server_address_, grpc::InsecureChannelCredentials());
-    stub_ = afs_operation::operators::NewStub(data_channel);
-
-    // Register this client with the data server via request_dir
-    // (data server uses this to track connected clients for notifications)
-    {
-        afs_operation::InitialiseRequest ds_request;
-        ds_request.set_code_to_initialise("I want input/output directory");
-        ds_request.set_client_id(client_id);
-        afs_operation::InitialiseResponse ds_response;
-        grpc::ClientContext ds_context;
-        grpc::Status ds_status = stub_->request_dir(&ds_context, ds_request, &ds_response);
-        if (!ds_status.ok()) {
-            std::cerr << "Warning: Failed to register with data server: " << ds_status.error_message() << std::endl;
-        }
-    }
+    // Phase 2: No direct data server connection at startup.
+    // Data servers are discovered per-file via Lookup/CreateFile.
+    // Subscriber connects to metadata server instead of data server.
 
     subscriber_context_ = std::make_unique<grpc::ClientContext>();
-
-    // set up the subscribe channel to the data server directly
     subscriber_thread = std::thread(&FileSystemClient::RunSubscriber, this);
 }
 
@@ -164,7 +146,40 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
 
     std::string cache_dir = std::string(cache_directory) + (resolved_path.front() == '/' ? "" : "/") +resolved_path; // Use resolved_path
     std::string file_location = cache_dir + (cache_dir.back() == '/' ? "" : "/") + filename;
-    
+
+    // Lookup: ask metadata server which data server holds this file
+    std::string file_server_path = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string ds_address;
+    std::string ds_root;
+    {
+        grpc::ClientContext lookup_ctx;
+        metadata::LookupRequest lookup_req;
+        metadata::LookupResponse lookup_resp;
+        lookup_req.set_path(file_server_path);
+        grpc::Status lookup_status = metadata_stub_->Lookup(&lookup_ctx, lookup_req, &lookup_resp);
+        if (!lookup_status.ok()) {
+            std::cerr << "Lookup failed for " << file_server_path << ": " << lookup_status.error_message() << std::endl;
+            return false;
+        }
+        ds_address = lookup_resp.data_server_address();
+        ds_root = lookup_resp.data_server_root();
+    }
+
+    // Register interest so we get notifications for this file
+    {
+        grpc::ClientContext reg_ctx;
+        metadata::RegisterFileInterestRequest reg_req;
+        metadata::RegisterFileInterestResponse reg_resp;
+        reg_req.set_path(file_server_path);
+        reg_req.set_client_id(client_id);
+        metadata_stub_->RegisterFileInterest(&reg_ctx, reg_req, &reg_resp);
+    }
+
+    auto* ds_stub = get_data_stub(ds_address);
+
+    // Build data-server-local path for RPCs (ds_root + virtual_path)
+    std::string ds_resolved_path = ds_root + resolved_path;
+
     // Case 1: File is NOT in the local cache
     cache_mutex.lock();
     if (cache.find(file_location) == cache.end()){
@@ -176,22 +191,22 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             std::cerr << "Error creating local cache directory: " << e.what() << std::endl;
             return false; // Fail early if the directory can't be created
         }
-        
+
         afs_operation::FileRequest request;
         request.set_filename(filename);
-        request.set_directory(resolved_path);
+        request.set_directory(ds_resolved_path);
         request.set_client_id(client_id);
-        
+
         std::string file_path = file_location; // Use the full file_location path
-        
+
         afs_operation::FileResponse response_temp;
-        
+
         int num_of_retries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
-        
+
         while(num_of_retries < 3 && !status.ok()){
             grpc::ClientContext context;
-            std::unique_ptr<grpc::ClientReader<afs_operation::FileResponse>> reader(stub_->open(&context, request));
+            std::unique_ptr<grpc::ClientReader<afs_operation::FileResponse>> reader(ds_stub->open(&context, request));
 
             std::ofstream outfile(file_path, std::ios::binary);
             if (!outfile.is_open()){
@@ -204,7 +219,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
                 last_timestamp = response_temp.timestamp();
                 if(response_temp.length() > 0)
                     outfile.write(response_temp.content().data(), response_temp.content().size());
-                
+
                 if (outfile.fail()){
                     std::cerr << "Can not write data to the local cache" << std::endl;
                     outfile.close();
@@ -213,10 +228,10 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             }
             outfile.close();
             status = reader->Finish();
-            
+
             if (status.ok()) {
                 // Only add to cache on success
-                struct FileInfo file_info{false, last_timestamp, filename, data_server_address_};
+                struct FileInfo file_info{false, last_timestamp, filename, ds_address, ds_root};
                 cache_mutex.lock();
                 cache[file_location] = file_info;
                 cache_mutex.unlock();
@@ -236,7 +251,7 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
                 std::cout << "Synced cached_attr for new download." << std::endl;
             }
             cache_mutex.unlock();
-            
+
             num_of_retries++;
         }
 
@@ -285,7 +300,13 @@ bool FileSystemClient::open_file(std::string filename, std::string path){
             return false;
         }
 
+        // Update stored server address/root in case it changed
         cache_mutex.lock();
+        auto cache_it = cache.find(file_location);
+        if (cache_it != cache.end()) {
+            cache_it->second.server_address = ds_address;
+            cache_it->second.server_root = ds_root;
+        }
         opened_files[file_location] = FileStreams{std::move(read_stream), std::move(write_stream)};
         if (file_mutexes.find(file_location) == file_mutexes.end()) {
             file_mutexes[file_location] = std::make_shared<std::mutex>();
@@ -569,23 +590,52 @@ bool FileSystemClient::create_file(const std::string& filename, const std::strin
     }
     cache_mutex.unlock();
 
-    // Create the local directory structure if it doesn't exist
-    
-    try {
-        std::filesystem::create_directories(cache_dir);;
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Error creating local cache directory: " << e.what() << std::endl;
-        return false; 
+    // Ask metadata server to create the file and assign a data server
+    std::string file_server_path = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+    std::string ds_address;
+    std::string ds_root;
+    {
+        grpc::ClientContext ctx;
+        metadata::CreateFileRequest req;
+        metadata::CreateFileResponse resp;
+        req.set_path(file_server_path);
+        req.set_mode(0644);
+        req.set_client_id(client_id);
+        grpc::Status status = metadata_stub_->CreateFile(&ctx, req, &resp);
+        if (!status.ok()) {
+            std::cerr << "CreateFile RPC failed: " << status.error_message() << std::endl;
+            return false;
+        }
+        ds_address = resp.data_server_address();
+        ds_root = resp.data_server_root();
     }
 
-    std::ofstream outfile(file_location); 
+    // Register interest for notifications
+    {
+        grpc::ClientContext reg_ctx;
+        metadata::RegisterFileInterestRequest reg_req;
+        metadata::RegisterFileInterestResponse reg_resp;
+        reg_req.set_path(file_server_path);
+        reg_req.set_client_id(client_id);
+        metadata_stub_->RegisterFileInterest(&reg_ctx, reg_req, &reg_resp);
+    }
+
+    // Create the local directory structure if it doesn't exist
+    try {
+        std::filesystem::create_directories(cache_dir);
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error creating local cache directory: " << e.what() << std::endl;
+        return false;
+    }
+
+    std::ofstream outfile(file_location);
     if (!outfile.is_open()) {
         std::cerr << "Error: Failed to create local file at " << file_location << std::endl;
         return false;
     }
     outfile.close();
 
-    struct FileInfo file_info{true, 0, filename, data_server_address_};
+    struct FileInfo file_info{true, 0, filename, ds_address, ds_root};
     cache_mutex.lock();
     cache[file_location] = file_info;
     cache_mutex.unlock();
@@ -670,6 +720,8 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
 
 
     bool needs_flush = cache_it->second.locally_modified;
+    std::string ds_address = cache_it->second.server_address;
+    std::string ds_root = cache_it->second.server_root;
     // shared_ptr copies keep the streams alive even if another thread replaces or
     // erases the opened_files entry between dropping global_lock and taking file_lock.
     std::shared_ptr<std::ofstream> write_stream = opened_file_it->second.write_stream;
@@ -710,11 +762,12 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
         int num_of_tries = 0;
         grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
         
-        // RPC Loop
+        // RPC Loop — use data server stub for the file's owning server
+        auto* ds_stub = get_data_stub(ds_address);
         while (num_of_tries < 3 && !status.ok()){
-            grpc::ClientContext context;     
+            grpc::ClientContext context;
             std::unique_ptr<grpc::ClientWriter<afs_operation::FileRequest>> writer(
-                stub_->close(&context, &response)
+                ds_stub->close(&context, &response)
             );
             
             
@@ -730,7 +783,7 @@ bool FileSystemClient::close_file(const std::string& filename, const std::string
                 if(len <= 0 && sent_at_least_once) break;
 
                 afs_operation::FileRequest request;
-                request.set_directory(resolved_path);
+                request.set_directory(ds_root + resolved_path);
                 request.set_filename(filename);
                 request.set_content(buffer, len);
                 request.set_client_id(client_id);
@@ -960,16 +1013,42 @@ bool FileSystemClient::truncate_file(const std::string& filename, const std::str
     std::string cache_path = std::string(cache_directory) + (resolved_path[0] == '/' ? "" : "/") + resolved_path
                            + (resolved_path.back() == '/' ? "" : "/") + filename;
 
-    // 1. RPC-first: server is authoritative
+    // Look up data server: check if file is open (use cached address), otherwise Lookup
+    std::string ds_address;
+    std::string ds_root;
+    {
+        std::lock_guard<std::mutex> g(cache_mutex);
+        auto cache_it = cache.find(cache_path);
+        if (cache_it != cache.end() && !cache_it->second.server_address.empty()) {
+            ds_address = cache_it->second.server_address;
+            ds_root = cache_it->second.server_root;
+        }
+    }
+    if (ds_address.empty()) {
+        std::string file_server_path = resolved_path + (resolved_path.back() == '/' ? "" : "/") + filename;
+        grpc::ClientContext lookup_ctx;
+        metadata::LookupRequest lookup_req;
+        metadata::LookupResponse lookup_resp;
+        lookup_req.set_path(file_server_path);
+        grpc::Status lookup_status = metadata_stub_->Lookup(&lookup_ctx, lookup_req, &lookup_resp);
+        if (!lookup_status.ok()) {
+            std::cerr << "Lookup failed for truncate: " << lookup_status.error_message() << std::endl;
+            return false;
+        }
+        ds_address = lookup_resp.data_server_address();
+        ds_root = lookup_resp.data_server_root();
+    }
+
+    // 1. RPC-first: server is authoritative — use data-server-local path
     grpc::ClientContext context;
     afs_operation::Truncate_request request;
     afs_operation::Truncate_response response;
-    request.set_directory(resolved_path);
+    request.set_directory(ds_root + resolved_path);
     request.set_filename(filename);
     request.set_size(size);
     request.set_client_id(client_id);
 
-    grpc::Status status = stub_->truncate(&context, request, &response);
+    grpc::Status status = get_data_stub(ds_address)->truncate(&context, request, &response);
     if (!status.ok()) {
         std::cerr << "Server truncate failed: " << status.error_message() << std::endl;
         return false;
@@ -1308,8 +1387,24 @@ bool FileSystemClient::fsync_file(const std::string& filename, const std::string
     // between dropping global_lock and taking file_lock.
     std::shared_ptr<std::ofstream> write_stream = opened_file_it->second.write_stream;
 
+    // Get the data server address and root for this file
+    std::string ds_address;
+    std::string ds_root;
+    {
+        auto c_it = cache.find(file_location);
+        if (c_it != cache.end()) {
+            ds_address = c_it->second.server_address;
+            ds_root = c_it->second.server_root;
+        }
+    }
+
     global_lock.unlock();
     std::lock_guard<std::mutex> file_lock(*file_mtx);
+
+    if (ds_address.empty()) {
+        std::cerr << "Error: No data server address for file during fsync." << std::endl;
+        return false;
+    }
 
     write_stream->flush();
     if (write_stream->fail()) {
@@ -1330,10 +1425,11 @@ bool FileSystemClient::fsync_file(const std::string& filename, const std::string
     int num_of_tries = 0;
     grpc::Status status(grpc::StatusCode::UNKNOWN, "Initial state for retry loop");
 
+    auto* ds_stub = get_data_stub(ds_address);
     while (num_of_tries < 3 && !status.ok()) {
         grpc::ClientContext context;
         std::unique_ptr<grpc::ClientWriter<afs_operation::FileRequest>> writer(
-            stub_->flush_file(&context, &response)
+            ds_stub->flush_file(&context, &response)
         );
 
         file_stream.clear();
@@ -1346,7 +1442,7 @@ bool FileSystemClient::fsync_file(const std::string& filename, const std::string
             if (len <= 0 && sent_at_least_once) break;
 
             afs_operation::FileRequest request;
-            request.set_directory(resolved_path);
+            request.set_directory(ds_root + resolved_path);
             request.set_filename(filename);
             request.set_content(buffer, len);
             request.set_client_id(client_id);

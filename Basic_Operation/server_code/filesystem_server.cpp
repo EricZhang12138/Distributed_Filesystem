@@ -477,6 +477,13 @@ grpc::Status FileSystem::close(grpc::ServerContext* context, grpc::ServerReader<
     std::cout << "[SERVER] Callback complete, returning OK" << std::endl;
     std::cout.flush();
 
+    // Notify metadata server of the change
+    {
+        int64_t file_size = 0;
+        try { file_size = std::filesystem::file_size(path); } catch (...) {}
+        notify_metadata(path, "UPDATE", client_id, timestamp_server, file_size);
+    }
+
         // update the file_map_open
     {
         std::lock_guard<std::mutex> lock(file_map_open_mutex);
@@ -761,6 +768,9 @@ grpc::Status FileSystem::chmod(grpc::ServerContext* context,
     notif.set_timestamp(ts);
     file_change_callback_metadata(path, client_id, notif);
 
+    // Notify metadata server
+    notify_metadata(path, "UPDATE", client_id, ts);
+
     std::cout << "Server chmod successful: " << path << " mode=" << std::oct << mode << std::dec << std::endl;
     return grpc::Status::OK;
 }
@@ -791,6 +801,9 @@ grpc::Status FileSystem::chown(grpc::ServerContext* context,
     notif.set_message("UPDATE");
     notif.set_timestamp(ts);
     file_change_callback_metadata(path, client_id, notif);
+
+    // Notify metadata server
+    notify_metadata(path, "UPDATE", client_id, ts);
 
     std::cout << "Server chown successful: " << path << std::endl;
     return grpc::Status::OK;
@@ -828,6 +841,9 @@ grpc::Status FileSystem::utimens(grpc::ServerContext* context,
     notif.set_message("UPDATE");
     notif.set_timestamp(get_file_timestamp(path));
     file_change_callback_metadata(path, client_id, notif);
+
+    // Notify metadata server
+    notify_metadata(path, "UPDATE", client_id, get_file_timestamp(path));
 
     std::cout << "Server utimens successful: " << path << std::endl;
     return grpc::Status::OK;
@@ -913,6 +929,9 @@ grpc::Status FileSystem::truncate(grpc::ServerContext* context,
     notif.set_timestamp(ts);
     file_change_callback_metadata(path, client_id, notif);
 
+    // Notify metadata server
+    notify_metadata(path, "UPDATE", client_id, ts, request->size());
+
     std::cout << "Server truncate successful: " << path << " size=" << request->size() << std::endl;
     return grpc::Status::OK;
 }
@@ -964,6 +983,13 @@ grpc::Status FileSystem::flush_file(grpc::ServerContext* context,
     notif.set_message("UPDATE");
     notif.set_timestamp(ts);
     file_change_callback_metadata(path, client_id, notif);
+
+    // Notify metadata server
+    {
+        int64_t file_size = 0;
+        try { file_size = std::filesystem::file_size(path); } catch (...) {}
+        notify_metadata(path, "UPDATE", client_id, ts, file_size);
+    }
 
     std::cout << "Server flush_file successful: " << path << std::endl;
     return grpc::Status::OK;
@@ -1145,21 +1171,59 @@ grpc::Status FileSystem::GetStatus(grpc::ServerContext* context,
 }
 
 void FileSystem::RunServer(){
-    std::string server_address = "0.0.0.0:50051";
-    
+    auto server = StartServer();
+    server->Wait();
+}
+
+std::unique_ptr<grpc::Server> FileSystem::StartServer(){
+    std::string server_address = "0.0.0.0:" + std::to_string(listen_port_);
+
     grpc::ServerBuilder builder;
-    
+
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
     builder.RegisterService(this);
-    
+
     std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
     std::cout << "Server listening on " << server_address << std::endl;
-    
-    server->Wait();
+
+    return server;
 }
 
 FileSystem::FileSystem(std::string root_dir_input): root_dir(root_dir_input){
     starting_length = root_dir.size();
+}
+
+void FileSystem::notify_metadata(const std::string& path, const std::string& message,
+                                 const std::string& client_id, int64_t timestamp,
+                                 int64_t new_size, const std::string& new_path) {
+    if (!metadata_stub_) return;
+    // Convert the data-server-local path to a virtual path by stripping root_dir prefix
+    std::string virtual_path = path;
+    if (virtual_path.rfind(root_dir, 0) == 0) {
+        virtual_path = virtual_path.substr(root_dir.size());
+        if (virtual_path.empty()) virtual_path = "/";
+    }
+    std::string virtual_new_path;
+    if (!new_path.empty()) {
+        virtual_new_path = new_path;
+        if (virtual_new_path.rfind(root_dir, 0) == 0) {
+            virtual_new_path = virtual_new_path.substr(root_dir.size());
+            if (virtual_new_path.empty()) virtual_new_path = "/";
+        }
+    }
+    grpc::ClientContext ctx;
+    metadata::NotifyFileChangeRequest req;
+    metadata::NotifyFileChangeResponse resp;
+    req.set_path(virtual_path);
+    req.set_message(message);
+    req.set_timestamp(timestamp);
+    req.set_client_id(client_id);
+    req.set_new_size(new_size);
+    if (!virtual_new_path.empty()) req.set_new_path(virtual_new_path);
+    auto status = metadata_stub_->NotifyFileChange(&ctx, req, &resp);
+    if (!status.ok()) {
+        std::cerr << "[DS] NotifyFileChange failed: " << status.error_message() << std::endl;
+    }
 }
 
 // implement truncate. Since we may only need to truncate
@@ -1170,8 +1234,9 @@ int main(int argc, char** argv){
     std::string path;
     std::string metadata_address;
     std::string advertise_address;  // The address clients should use to reach this data server
+    int port = 50051;
 
-    // Parse args: ./afs_server /path/to/root [--metadata host:port] [--address host:port]
+    // Parse args: ./afs_server /path/to/root [--metadata host:port] [--address host:port] [--port N]
     for (int i = 1; i < argc; i++) {
         if (std::string(argv[i]) == "--metadata" && i + 1 < argc) {
             metadata_address = argv[i + 1];
@@ -1179,23 +1244,33 @@ int main(int argc, char** argv){
         } else if (std::string(argv[i]) == "--address" && i + 1 < argc) {
             advertise_address = argv[i + 1];
             i++;
+        } else if (std::string(argv[i]) == "--port" && i + 1 < argc) {
+            port = std::atoi(argv[i + 1]);
+            i++;
         } else if (path.empty()) {
             path = argv[i];
         }
     }
 
     if (path.empty()) {
-        std::cerr << "Usage: afs_server <root_dir> [--metadata <host:port>] [--address <host:port>]" << std::endl;
+        std::cerr << "Usage: afs_server <root_dir> [--metadata <host:port>] [--address <host:port>] [--port <N>]" << std::endl;
         return 1;
     }
 
-    // Default advertise address: localhost:50051 (what clients connect to)
+    // Canonicalize root_dir to an absolute path
+    path = std::filesystem::canonical(path).string();
+
+    // Default advertise address uses the configured port
     if (advertise_address.empty()) {
-        advertise_address = "localhost:50051";
+        advertise_address = "localhost:" + std::to_string(port);
     }
 
     FileSystem filesys(path);
+    filesys.listen_port_ = port;
     std::cout << "Running filesystem server...... Current root directory on the server is " << path << std::endl;
+
+    // Start the gRPC server FIRST (non-blocking) so we're ready to receive RPCs
+    auto server = filesys.StartServer();
 
     // If metadata server address is provided, register and start heartbeat
     std::atomic<bool> heartbeat_running{false};
@@ -1205,7 +1280,12 @@ int main(int argc, char** argv){
         auto meta_channel = grpc::CreateChannel(metadata_address, grpc::InsecureChannelCredentials());
         auto meta_stub = metadata::MetadataService::NewStub(meta_channel);
 
+        // Store a shared copy in the FileSystem object so RPCs can call NotifyFileChange
+        auto meta_channel2 = grpc::CreateChannel(metadata_address, grpc::InsecureChannelCredentials());
+        filesys.set_metadata_stub(metadata::MetadataService::NewStub(meta_channel2));
+
         // Register with metadata server — advertise_address is what clients will use
+        // (we must be listening first, because the metadata server calls us back to populate its tree)
         {
             grpc::ClientContext ctx;
             metadata::RegisterRequest req;
@@ -1240,7 +1320,8 @@ int main(int argc, char** argv){
         });
     }
 
-    filesys.RunServer();
+    // Block until server shuts down
+    server->Wait();
 
     // Cleanup
     heartbeat_running = false;
